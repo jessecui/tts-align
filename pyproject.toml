@@ -1,0 +1,58 @@
+[project]
+name = "tts-rl"
+version = "0.1.0"
+description = "DPO, KTO, and GRPO applied to a small autoregressive TTS model (OuteTTS 1.0) — learning/demo project."
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+
+# Pinned for reproducibility. Verify the lock on the rented box with `uv sync`;
+# the version of bitsandbytes / vllm / DAC-codec may need a nudge depending on the
+# CUDA version of the chosen RunPod image (default target: CUDA 12.4).
+dependencies = [
+    # Core
+    "torch==2.5.1",
+    "torchaudio==2.5.1",
+    "numpy>=1.26,<2.2",
+    "scipy>=1.13",
+
+    # Transformers stack
+    "transformers==4.46.3",
+    "accelerate==1.1.1",
+    "peft==0.13.2",
+    "trl==0.12.1",
+    "datasets==3.1.0",
+    "bitsandbytes==0.44.1",
+    "safetensors>=0.4",
+
+    # TTS
+    "outetts==0.4.4",
+
+    # Reward pipeline
+    "openai-whisper==20240930",   # ships its own Whisper checkpoints; we use Whisper-small
+    "jiwer==3.0.5",
+    "utmos==0.0.1",               # fakerybakery/utmos — unofficial pip package, simple install
+    "speechbrain==1.0.2",         # for WavLM/ECAPA speaker embeddings
+    "soundfile==0.12.1",
+    "librosa==0.10.2.post1",
+
+    # Tracking / config / IO
+    "wandb==0.18.7",
+    "pyyaml>=6.0",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# Installed manually on the rented box after the base sync, since vLLM is sensitive
+# to torch/CUDA pinning and may need a specific wheel index. See README.
+vllm = [
+    "vllm==0.6.4.post1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]

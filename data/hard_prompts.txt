@@ -1,0 +1,44 @@
+# Hard prompts for TTS preference dataset.
+# One prompt per line. Lines starting with '#' are skipped.
+# Curated to stress-test the model along axes that tend to expose alignment gaps:
+#   - long sentences (40+ words, multiple clauses)
+#   - numbers (years, decimals, phone numbers, ordinals, large numbers)
+#   - abbreviations and acronyms
+#   - code-switched / non-English words
+#   - unusual proper nouns
+# Edit / extend as you go — this is a starter set, not the final list.
+
+# --- Long sentences (40+ words, multiple clauses) ---
+Although the rain had begun before they reached the trailhead, the group decided to push on anyway, reasoning that the storm would pass within an hour and that turning back would mean missing the only clear view of the canyon they were likely to get all week.
+By the time the final report was delivered, three of the original authors had moved to different institutions, two had retired, and the funding agency had quietly reorganized itself, leaving the question of who was actually responsible for the recommendations entirely unclear.
+She rehearsed the speech in the mirror for nearly an hour, adjusting the cadence on the second paragraph, softening the joke at the end, and trying — without much success — to look as though she had not rehearsed it at all.
+
+# --- Numbers in various formats ---
+The conference call is scheduled for 2:45 PM on March 3rd, 2026.
+Please dial 1-800-555-0142, extension 4071, to reach customer support.
+The recipe calls for 3.5 ounces of flour, 1/4 teaspoon of salt, and 250 milliliters of warm water.
+In the fourth quarter, revenue grew by 12.7%, compared to a 3.1% decline in the same period a year earlier.
+The asteroid passed within 27,431 kilometers of Earth on the morning of November 14th.
+He finished 1st in the 200-meter freestyle, 3rd in the 400, and 22nd overall in the medley.
+
+# --- Abbreviations and acronyms ---
+The NASA JPL team confirmed the Mars rover's CPU passed its EOL diagnostic on schedule.
+Dr. Patel, MD, PhD, will give the keynote at the IEEE ICASSP workshop next Thursday.
+Please RSVP to HR by EOD Friday; the all-hands is at 10 AM in conference room B.
+The HTTP request returned a 503 from the API gateway, but the underlying gRPC call succeeded.
+
+# --- Code-switched and non-English words ---
+She ordered a croissant and a café au lait, then settled into the corner with her copy of Le Monde.
+The schadenfreude was almost palpable when the rival team blew their lead in overtime.
+We spent the afternoon at the izakaya, working through plates of yakitori and karaage.
+His grandmother still calls it the doppelgänger effect, though no one in the family knows where the term came from.
+
+# --- Unusual proper nouns ---
+Ng Wai-keung met with Siobhan Caoimhe at the Reykjavík conference last spring.
+The lecture by Professor Xiuying Zhao on quantum thermodynamics drew an unexpected crowd.
+Have you been to Ouagadougou, Antananarivo, or Bujumbura?
+Eyjafjallajökull's 2010 eruption disrupted European air traffic for nearly a week.
+
+# --- Mixed-stress combinations (intentionally evil) ---
+At the 2024 NeurIPS poster session, Dr. Søren Kierkegaard-Hansen presented results from a 47.3% improvement on the GLUE benchmark using a 1.2B-parameter model.
+The patient, a 67-year-old male, presented with elevated BUN/Cr, ALT of 142 U/L, and a HbA1c of 9.7% — a marked deterioration from his last visit on 2025-08-14.

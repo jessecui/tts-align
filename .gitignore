@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# uv
+uv.lock
+
+# IDE
+.vscode/
+.idea/
+
+# Project outputs (large, regeneratable)
+runs/
+data/generated/
+data/*.parquet
+data/*.jsonl
+results/audio/
+*.wav
+*.flac
+*.mp3
+
+# Model caches (HF, torch hub)
+.cache/
+hf_cache/
+
+# wandb
+wandb/
+
+# OS
+.DS_Store
