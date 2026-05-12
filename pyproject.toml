@@ -3,7 +3,7 @@ name = "tts-rl"
 version = "0.1.0"
 description = "DPO, KTO, and GRPO applied to a small autoregressive TTS model (OuteTTS 1.0) — learning/demo project."
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10,<3.12"  # utmos==0.0.1 has no wheels for Python 3.12+
 
 # Pinned for reproducibility. Verify the lock on the rented box with `uv sync`;
 # the version of bitsandbytes / vllm / DAC-codec may need a nudge depending on the
