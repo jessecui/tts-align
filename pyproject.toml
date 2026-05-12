@@ -15,13 +15,15 @@ dependencies = [
     "numpy>=1.26,<2.2",
     "scipy>=1.13",
 
-    # Transformers stack
-    "transformers==4.46.3",
-    "accelerate==1.1.1",
-    "peft==0.13.2",
-    "trl==0.12.1",
-    "datasets==3.1.0",
-    "bitsandbytes==0.44.1",
+    # Transformers stack. Transformers is pinned to 4.52.3 because outetts==0.4.4
+    # requires that exact version. The rest of the stack is bumped to versions
+    # known to be compatible with the 4.52 line.
+    "transformers==4.52.3",
+    "accelerate>=1.5,<1.8",
+    "peft>=0.14,<0.16",
+    "trl>=0.16,<0.18",
+    "datasets>=3.1,<3.7",
+    "bitsandbytes>=0.45,<0.48",
     "safetensors>=0.4",
 
     # TTS
