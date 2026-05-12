@@ -19,8 +19,8 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
-    smoke)        python scripts/00_smoke_test_rewards.py "$@" ;;
-    vllm-check)   python scripts/00b_check_vllm_compat.py "$@" ;;
+    smoke)        uv run python scripts/00_smoke_test_rewards.py "$@" ;;
+    vllm-check)   uv run python scripts/00b_check_vllm_compat.py "$@" ;;
     dataset)      echo "[Phase 2] not yet implemented" && exit 2 ;;
     dpo)          echo "[Phase 2] not yet implemented" && exit 2 ;;
     kto)          echo "[Phase 3] not yet implemented" && exit 2 ;;
