@@ -56,3 +56,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+# Some legacy sdists (e.g. openai-whisper) import pkg_resources in their
+# setup.py but don't declare setuptools as a build dependency. uv's isolated
+# PEP 517 build envs don't include setuptools by default, so we inject it here.
+[tool.uv.extra-build-dependencies]
+openai-whisper = ["setuptools"]
