@@ -3,7 +3,7 @@ name = "tts-rl"
 version = "0.1.0"
 description = "DPO, KTO, and GRPO applied to a small autoregressive TTS model (OuteTTS 1.0) — learning/demo project."
 readme = "README.md"
-requires-python = ">=3.10,<3.12"  # utmos==0.0.1 has no wheels for Python 3.12+
+requires-python = ">=3.10,<3.13"
 
 # Pinned for reproducibility. Verify the lock on the rented box with `uv sync`;
 # the version of bitsandbytes / vllm / DAC-codec may need a nudge depending on the
@@ -32,7 +32,7 @@ dependencies = [
     # Reward pipeline
     "openai-whisper==20240930",   # ships its own Whisper checkpoints; we use Whisper-small
     "jiwer==3.0.5",
-    "utmos==0.0.1",               # fakerybakery/utmos — unofficial pip package, simple install
+    "utmos==1.1.10",              # fakerybakery/utmos — unofficial pip package, simple install
     "speechbrain==1.0.2",         # for WavLM/ECAPA speaker embeddings
     "soundfile==0.12.1",
     "librosa==0.10.2.post1",
