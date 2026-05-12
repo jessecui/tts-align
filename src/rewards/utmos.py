@@ -32,12 +32,15 @@ def _load_model(device: Optional[str] = None):
     return _utmos_pkg.Score()
 
 
+UTMOS_NATIVE_SR = 16_000  # the wav2vec2 SSL backbone UTMOS uses was trained at 16k
+
+
 def compute_utmos(audio: np.ndarray, sample_rate: int) -> float:
     """Predict MOS for the given audio array.
 
     Args:
         audio: 1-D float32 mono array.
-        sample_rate: sample rate of `audio`. UTMOS resamples internally.
+        sample_rate: sample rate of `audio`. We resample to 16k explicitly.
 
     Returns:
         Predicted MOS in roughly [1, 5]. Higher is better.
@@ -47,10 +50,26 @@ def compute_utmos(audio: np.ndarray, sample_rate: int) -> float:
     if audio.dtype != np.float32:
         audio = audio.astype(np.float32)
 
+    audio_t = torch.from_numpy(audio)
+
+    # Resample to 16 kHz ourselves rather than trust the package's internal handling
+    # (its calculate_wav signature varies across releases).
+    if sample_rate != UTMOS_NATIVE_SR:
+        import torchaudio.functional as TF
+
+        audio_t = TF.resample(audio_t.unsqueeze(0), orig_freq=sample_rate, new_freq=UTMOS_NATIVE_SR).squeeze(0)
+
+    # The wav2vec2 conv front-end needs at least kernel_size (10) samples; pad short
+    # clips with zeros to a 0.1s floor. Real TTS output is always much longer than this.
+    MIN_SAMPLES = 1600
+    if audio_t.shape[0] < MIN_SAMPLES:
+        audio_t = torch.nn.functional.pad(audio_t, (0, MIN_SAMPLES - audio_t.shape[0]))
+
+    # Explicitly batch as (1, T) — the package's auto-unsqueeze can't be relied on.
+    audio_t = audio_t.unsqueeze(0)
+
     model = _load_model()
-    # The package accepts a torch.Tensor or np.ndarray (sample_len,) or (B, sample_len).
-    score = model.calculate_wav(torch.from_numpy(audio), sample_rate)
-    # Some versions return a tensor; some return a python float. Coerce.
+    score = model.calculate_wav(audio_t, UTMOS_NATIVE_SR)
     if isinstance(score, torch.Tensor):
         score = score.item()
     return float(score)
