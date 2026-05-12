@@ -21,8 +21,8 @@ shift || true
 case "$cmd" in
     smoke)        uv run python scripts/00_smoke_test_rewards.py "$@" ;;
     vllm-check)   uv run python scripts/00b_check_vllm_compat.py "$@" ;;
-    dataset)      echo "[Phase 2] not yet implemented" && exit 2 ;;
-    dpo)          echo "[Phase 2] not yet implemented" && exit 2 ;;
+    dataset)      uv run python scripts/01_generate_dataset.py "$@" ;;
+    dpo)          uv run python scripts/02_train_dpo.py "$@" ;;
     kto)          echo "[Phase 3] not yet implemented" && exit 2 ;;
     grpo)         echo "[Phase 4] not yet implemented" && exit 2 ;;
     eval)         echo "[Phase 5] not yet implemented" && exit 2 ;;

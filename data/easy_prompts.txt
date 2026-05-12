@@ -1,0 +1,83 @@
+# Easy prompts for the TTS preference dataset — short, natural English sentences.
+# Style intentionally LibriTTS-flavored (literary, well-formed, single clause).
+# One prompt per line. Lines starting with '#' are skipped.
+#
+# To replace this with actual LibriTTS test-clean transcripts:
+#
+#   python -c "
+#   from datasets import load_dataset
+#   ds = load_dataset('librispeech_asr', 'clean', split='test',
+#                     streaming=True, trust_remote_code=True)
+#   lines = []
+#   for item in ds:
+#       t = item['text'].strip()
+#       if 30 <= len(t) <= 200:
+#           lines.append(t)
+#       if len(lines) >= 250:
+#           break
+#   open('data/easy_prompts.txt', 'w').write('\n'.join(lines))
+#   "
+#
+# The bundled list below is a curated starter set so the dataset generator
+# runs without needing the HF datasets dependency to behave on first attempt.
+
+The garden was full of flowers in bloom.
+He took a long walk through the quiet village.
+The boy looked up at the stars and smiled.
+She closed the book and turned off the lamp.
+They lived in a small cottage by the sea.
+The old man told stories of his youth.
+A cool breeze swept through the open window.
+He sat by the fire and warmed his hands.
+The river flowed gently past the willow trees.
+She found an old letter tucked inside the book.
+The children played in the meadow all afternoon.
+He laughed at the sound of his own joke.
+She poured tea into a delicate china cup.
+The clock on the mantel struck midnight.
+He picked up his hat and walked out the door.
+The roses in the garden had just begun to bloom.
+She wrote a letter to her sister every Sunday.
+The traveler arrived at the inn after dark.
+He read aloud from the worn pages of the book.
+The little dog wagged its tail with excitement.
+She sang a soft song as she worked.
+The candle flickered in the cool night air.
+He climbed the hill to see the valley below.
+The market was crowded with shoppers and vendors.
+She placed the basket of fruit on the table.
+The boy ran barefoot across the wet grass.
+He returned home just as the rain began to fall.
+The young woman painted the scene before her.
+She listened carefully to the sound of the waves.
+The old gentleman tipped his hat and smiled.
+They walked together along the quiet country road.
+He found a small bird with a broken wing.
+She wrapped the gift carefully in colored paper.
+The teacher explained the lesson once again.
+He carried the heavy box up the narrow stairs.
+She watered the plants on the windowsill.
+The children gathered around the storyteller.
+He whistled a tune as he walked to work.
+She arranged the flowers in a tall vase.
+The boat drifted slowly across the calm lake.
+He waited patiently for the train to arrive.
+She remembered the summer she spent at the lake.
+The cat curled up beside the warm hearth.
+He fixed the broken gate before nightfall.
+She drew a picture of her favorite horse.
+The wind rustled the leaves on the tall oak.
+He saved every coin to buy a new bicycle.
+She mended the torn dress with steady hands.
+The baker rose early to prepare the bread.
+He read the newspaper while drinking his coffee.
+She walked to school every morning with her brother.
+The artist worked quietly in her sunlit studio.
+He greeted his old friend with a firm handshake.
+She placed a daisy in the buttonhole of his coat.
+The villagers gathered in the square for the festival.
+He wrote his name carefully at the top of the page.
+She listened to the rain tapping against the window.
+The young couple danced beneath the lanterns.
+He told the children a tale of pirates and treasure.
+She mended the sock with a needle and thread.

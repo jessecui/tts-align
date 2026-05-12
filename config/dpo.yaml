@@ -1,0 +1,45 @@
+# DPO hyperparameters. Used by scripts/02_train_dpo.py.
+#
+# Step counts and batch sizes are tuned for a single A100 40GB. Tune down
+# for an L40S / A6000 if you OOM; tune up if you have an A100 80GB.
+
+seed: 42
+model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
+
+# Where to read the scored preference dataset from (Phase 2a output).
+dataset_path: "data/dataset.parquet"
+
+# LoRA — exactly what the project plan specified.
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  # Attention proj + MLP proj on Llama. We deliberately do NOT LoRA-fy the
+  # embedding/lm_head because OuteTTS extends Llama's vocab with audio tokens
+  # whose embeddings we want to keep stable.
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+# DPO loss
+beta: 0.1                # KL strength; standard DPO default
+
+# Optimization
+max_steps: 300
+learning_rate: 5.0e-5
+batch_size: 2            # per-device; effective batch = batch_size * grad_accum
+grad_accum: 4
+warmup_ratio: 0.05
+max_length: 2048         # prompt + completion budget
+max_prompt_length: 512
+
+# Logging & checkpointing
+output_dir: "runs/dpo"
+logging_steps: 10
+save_steps: 100
+wandb_project: "tts-rl"
