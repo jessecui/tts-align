@@ -27,7 +27,7 @@ Honest caveats:
 - Both methods trained 16–43 epochs over a small dataset (53 train prompts × 4 candidates = 212 candidates), so some training-set memorization. The held-out numbers are what matter, but a larger dataset would give a stronger story.
 - The reward pipeline is itself imperfect (Whisper makes mistakes; UTMOS is a learned approximation of human ratings; ECAPA is one of several reasonable speaker encoders). The "preferences" the methods are learning to satisfy are *the reward pipeline's preferences*, not human preferences directly.
 
-Sample audio under [`results/audio/<method>/`](results/audio/). Training curves on [wandb](https://wandb.ai/) under the `tts-rl` project.
+Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the prompts preference optimization had the most room to help on) at [`results/samples/`](results/samples/). Each prompt directory contains `base.wav`, `dpo.wav`, `kto.wav` plus the source text. Full audio under [`results/audio/<method>/`](results/audio/) on the rented box (gitignored — too big for the repo). Training curves on [wandb](https://wandb.ai/) under the `tts-rl` project.
 
 ## Plan
 

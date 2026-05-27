@@ -19,6 +19,10 @@ results/audio/
 *.flac
 *.mp3
 
+# Curated sample audio for the README (small, hand-picked) is tracked.
+!results/samples/
+!results/samples/**
+
 # Model caches (HF, torch hub)
 .cache/
 hf_cache/
