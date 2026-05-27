@@ -14,7 +14,6 @@ dependencies = [
     "torchaudio==2.5.1",
     "numpy>=1.26,<2.2",
     "scipy>=1.13",
-
     # Transformers stack. Transformers is pinned to 4.52.3 because outetts==0.4.4
     # requires that exact version. The rest of the stack is bumped to versions
     # known to be compatible with the 4.52 line.
@@ -25,10 +24,8 @@ dependencies = [
     "datasets>=3.1,<3.7",
     "bitsandbytes>=0.45,<0.48",
     "safetensors>=0.4",
-
     # TTS
     "outetts==0.4.4",
-
     # Reward pipeline
     "openai-whisper==20240930",   # ships its own Whisper checkpoints; we use Whisper-small
     "jiwer==3.0.5",
@@ -36,13 +33,13 @@ dependencies = [
     "speechbrain==1.0.2",         # for WavLM/ECAPA speaker embeddings
     "soundfile==0.12.1",
     "librosa==0.10.2.post1",
-
     # Tracking / config / IO
     "wandb==0.18.7",
     "pyyaml>=6.0",
     "pandas>=2.2",
     "pyarrow>=17",
     "tqdm>=4.66",
+    "vllm==0.6.4.post1",
 ]
 
 [project.optional-dependencies]
