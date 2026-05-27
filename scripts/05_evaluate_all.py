@@ -206,14 +206,14 @@ def write_markdown_summary(summary_df: pd.DataFrame, n_eval: int, out_path: Path
     has_spk = "mean_speaker_sim" in summary_df.columns and summary_df["mean_speaker_sim"].notna().any()
     md = [
         "# Eval Comparison\n",
-        f"_{n_eval} held-out prompts. Same reward pipeline as training (Whisper-small WER, UTMOS, ECAPA-TDNN speaker sim, composite)._\n",
+        f"_{n_eval} held-out prompts. Same reward pipeline as training (Whisper-small WER, UTMOS, ECAPA-TDNN speaker sim, composite). Lower is better for WER and catastrophic-failure; higher is better for everything else._\n",
     ]
-    header = "| method | n | mean WER ↓ | mean UTMOS ↑ |"
+    header = "| method | n | mean WER | mean UTMOS |"
     sep = "|---|---|---|---|"
     if has_spk:
-        header += " mean spk_sim ↑ |"
+        header += " mean spk_sim |"
         sep += "---|"
-    header += " mean composite ↑ | catastrophic failure (WER>30%) ↓ |"
+    header += " mean composite | catastrophic failure (WER>30%) |"
     sep += "---|---|"
     md.append(header)
     md.append(sep)
@@ -224,7 +224,7 @@ def write_markdown_summary(summary_df: pd.DataFrame, n_eval: int, out_path: Path
             line += f" {spk:.3f} |"
         line += f" {r['mean_composite']:.3f} | {r['catastrophic_failure_rate'] * 100:.1f}% |"
         md.append(line)
-    out_path.write_text("\n".join(md) + "\n")
+    out_path.write_text("\n".join(md) + "\n", encoding="utf-8")
 
 
 def main() -> int:
