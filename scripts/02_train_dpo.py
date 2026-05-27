@@ -46,88 +46,53 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("dpo")
 
 
-def _resolve_audio_codec(iface):
-    """Return the OuteTTS audio codec object (DAC encoder/decoder).
+def build_outetts_prompt_str(iface, prompt_text: str) -> str:
+    """The DPO 'prompt': the OuteTTS inference prompt for `prompt_text`.
 
-    Searches a few known attribute names so we tolerate minor outetts version drift.
-    Raises AttributeError with a helpful message if none match.
+    `prompt_processor.get_completion_prompt(text)` returns the canonical
+    `<|im_start|>\\n<|text_start|>{text}<|text_end|>\\n<|audio_start|>\\n` —
+    exactly what the model sees at inference time before it starts emitting
+    audio tokens. We use this for both chosen and rejected so they share an
+    identical conditioning prefix (a requirement for DPO).
     """
-    for attr in ("audio_codec", "audio_tokenizer", "codec"):
-        codec = getattr(iface, attr, None)
-        if codec is not None:
-            return codec
-    raise AttributeError(
-        "Couldn't find the audio codec on outetts.Interface. "
-        "Inspect with: dir(iface). Expected one of: audio_codec, audio_tokenizer, codec."
-    )
+    return iface.prompt_processor.get_completion_prompt(prompt_text)
 
 
-def _resolve_prompt_processor(iface):
-    """Return the OuteTTS prompt-template object."""
-    for attr in ("prompt_processor", "prompt_builder", "processor"):
-        pp = getattr(iface, attr, None)
-        if pp is not None:
-            return pp
-    raise AttributeError(
-        "Couldn't find the prompt processor on outetts.Interface. "
-        "Inspect with: dir(iface). Expected one of: prompt_processor, prompt_builder, processor."
-    )
+def encode_audio_to_dpo_completion(iface, audio_path: Path, prompt_text: str) -> str:
+    """The DPO 'chosen' or 'rejected' completion string for one audio file.
 
+    OuteTTS's canonical training format interleaves text and audio codes
+    word-by-word, with prosodic features. To match that distribution we ingest
+    the audio through `iface.create_speaker` (Whisper alignment + DAC encode +
+    feature extraction), then render with `get_training_prompt`.
 
-def encode_audio_path_to_token_str(iface, audio_path: Path, tokenizer) -> str:
-    """Load an audio file, DAC-encode it, render as a tokenizer-roundtrippable string.
-
-    Returns a string containing the audio-token portion of the OuteTTS sequence
-    (no prompt, no special header — just the codec tokens).
+    We strip the inference-prompt prefix so what's returned is only the
+    'completion' tokens — the audio-rendering portion the model would generate.
+    We also override `spk['text']` to our supplied `prompt_text` so both chosen
+    and rejected produce completions that share an identical prompt header
+    (Whisper occasionally mis-transcribes bad TTS samples, which would
+    otherwise corrupt the prefix).
     """
-    import soundfile as sf
-
-    audio, sr = sf.read(str(audio_path), always_2d=False)
-    if audio.ndim > 1:
-        audio = audio.mean(axis=1)
-    audio_t = torch.from_numpy(audio).float().unsqueeze(0)  # (1, T)
-
-    codec = _resolve_audio_codec(iface)
-    # Most codec APIs accept (audio_tensor, sample_rate). If yours has a different
-    # signature, adjust here.
-    encoded = codec.encode(audio_t, sample_rate=sr) if "sample_rate" in codec.encode.__code__.co_varnames \
-        else codec.encode(audio_t)
-    # `encoded` is typically a tensor of int token IDs already in the LM's vocab,
-    # shape (B, T) or (B, n_codebooks, T). Flatten to a 1-D sequence of LM token IDs.
-    if isinstance(encoded, (list, tuple)):
-        encoded = encoded[0]
-    if encoded.dim() == 3:
-        # Interleave codebooks: cb1[0], cb2[0], cb1[1], cb2[1], ...
-        encoded = encoded.permute(0, 2, 1).reshape(encoded.shape[0], -1)
-    token_ids = encoded.squeeze(0).tolist()
-
-    return tokenizer.decode(token_ids, skip_special_tokens=False)
+    spk = iface.create_speaker(audio_path=str(audio_path), transcript=prompt_text)
+    spk["text"] = prompt_text
+    full = iface.prompt_processor.get_training_prompt(spk)
+    prefix = iface.prompt_processor.get_completion_prompt(prompt_text)
+    if not full.startswith(prefix):
+        raise ValueError(
+            f"get_training_prompt did not start with get_completion_prompt for {audio_path}. "
+            f"Prefix bytes don't match — check outetts version compatibility."
+        )
+    return full[len(prefix):]
 
 
-def build_outetts_prompt_str(iface, text: str, speaker, tokenizer) -> str:
-    """Build the OuteTTS LM prompt string for `text` (everything before the audio tokens).
-
-    Falls back to a manual template if the library helper isn't reachable.
-    """
-    try:
-        pp = _resolve_prompt_processor(iface)
-        for fn_name in ("build_prompt", "get_prompt", "format_prompt"):
-            fn = getattr(pp, fn_name, None)
-            if fn is not None:
-                return fn(text=text, speaker=speaker)
-    except AttributeError as e:
-        logger.warning("falling back to manual prompt template: %s", e)
-    # Manual fallback — minimum-viable OuteTTS prompt, may be sub-optimal.
-    return f"<|im_start|>user\n<|text_start|>{text}<|text_end|><|im_end|>\n<|im_start|>assistant\n"
-
-
-def build_training_examples(iface, pairs_df, speaker, tokenizer) -> list[dict]:
+def build_training_examples(iface, pairs_df) -> list[dict]:
     """Convert pair rows into the {prompt, chosen, rejected} text triples DPOTrainer expects."""
     examples = []
     for _, row in pairs_df.iterrows():
-        prompt_str = build_outetts_prompt_str(iface, row["prompt"], speaker, tokenizer)
-        chosen_str = encode_audio_path_to_token_str(iface, Path(row["chosen_audio_path"]), tokenizer)
-        rejected_str = encode_audio_path_to_token_str(iface, Path(row["rejected_audio_path"]), tokenizer)
+        prompt_text = row["prompt"]
+        prompt_str = build_outetts_prompt_str(iface, prompt_text)
+        chosen_str = encode_audio_to_dpo_completion(iface, Path(row["chosen_audio_path"]), prompt_text)
+        rejected_str = encode_audio_to_dpo_completion(iface, Path(row["rejected_audio_path"]), prompt_text)
         examples.append({"prompt": prompt_str, "chosen": chosen_str, "rejected": rejected_str})
     return examples
 
@@ -168,7 +133,6 @@ def main() -> int:
             backend=outetts.Backend.HF,
         )
     )
-    speaker = iface.load_default_speaker("EN-FEMALE-1-NEUTRAL")
 
     # ----- Tokenizer + base model for training -----
     # We load the LM weights afresh via transformers (rather than reusing iface.model)
@@ -186,10 +150,10 @@ def main() -> int:
     )
 
     # ----- Build training dataset -----
-    logger.info("encoding %d audio pairs to LM-token strings", len(pairs))
+    logger.info("encoding %d audio pairs to LM-token strings via Whisper alignment + DAC", len(pairs))
     t0 = time.time()
-    examples = build_training_examples(iface, pairs, speaker, tokenizer)
-    logger.info("  encoded in %.1fs", time.time() - t0)
+    examples = build_training_examples(iface, pairs)
+    logger.info("  encoded in %.1fs (~%.1fs per audio)", time.time() - t0, (time.time() - t0) / max(1, 2 * len(pairs)))
     train_ds = Dataset.from_list(examples)
     logger.info("training dataset: %d examples", len(train_ds))
 
