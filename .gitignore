@@ -12,8 +12,8 @@ venv/
 # Project outputs (large, regeneratable)
 runs/
 data/generated/
-data/*.parquet
-data/*.jsonl
+data/smoke/
+data/dataset_smoke.parquet
 results/audio/
 *.wav
 *.flac
