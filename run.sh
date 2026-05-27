@@ -25,7 +25,7 @@ case "$cmd" in
     dpo)          uv run python scripts/02_train_dpo.py "$@" ;;
     kto)          uv run python scripts/03_train_kto.py "$@" ;;
     grpo)         echo "[Phase 4] not yet implemented" && exit 2 ;;
-    eval)         echo "[Phase 5] not yet implemented" && exit 2 ;;
+    eval)         uv run python scripts/05_evaluate_all.py "$@" ;;
     all)          echo "[Phase 5] not yet implemented" && exit 2 ;;
     "")           echo "Usage: ./run.sh {smoke|vllm-check|dataset|dpo|kto|grpo|eval|all}" && exit 1 ;;
     *)            echo "Unknown subcommand: $cmd" && exit 1 ;;
