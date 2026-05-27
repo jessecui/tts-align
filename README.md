@@ -16,11 +16,11 @@ with a held-out comparison eval against the base model.
 | DPO  | 0.061 | 4.38 | 0.586 | 0.876 | 10.0% |
 | KTO  | **0.057** | **4.38** | **0.619** | **0.882** | **10.0%** |
 
-Headlines:
-- **Both methods beat the base model** on every metric.
-- **KTO edges DPO across the board.** Biggest win is on speaker similarity (+0.04 over base, +0.03 over DPO).
-- **Both cut the catastrophic-failure rate by ~25% relative** (13.3% → 10.0%).
-- **WER dropped 16% relative** under KTO despite the LM not directly optimizing WER — the preference loss steers toward sequences that score well on the composite reward, and that generalizes to held-out prompts.
+Headlines (kept honest about n=30 — these are *directional* signals, not statistically defensible deltas):
+- **Both methods beat the base model** on every metric in the table.
+- **KTO edges DPO across the board.** Largest margin is on speaker similarity: +0.039 over base, +0.033 over DPO. The other deltas are smaller and within plausible per-seed noise.
+- **Catastrophic failures dropped from 4/30 to 3/30 for both DPO and KTO** — directionally good, but a one-prompt difference at n=30.
+- **KTO's mean WER came in 0.011 absolute below base** (0.057 vs 0.068). Suggestive, not significant — at n=30 with no confidence intervals you can't conclude more.
 
 ### Why KTO > DPO here — a counterintuitive result worth examining
 
@@ -34,7 +34,8 @@ Textbook intuition is that DPO should be more robust: paired comparisons cancel 
 The "DPO is more robust" intuition comes from a setting with clean, human-labeled paired preferences. With synthetic preferences from an automatic reward model, KTO's structural advantages — more data, more noise tolerance, asymmetric loss — dominate.
 
 Honest caveats:
-- 30 prompts is small. No confidence intervals; differences between DPO and KTO at this scale could be one std-dev of noise.
+- 30 prompts is small. No confidence intervals; differences between DPO and KTO at this scale could easily be one std-dev of noise.
+- **The DPO-vs-KTO comparison isn't strictly apples-to-apples** as run here. KTO got ~2.5x more training items (140 vs 53) because we kept the top *and* bottom thirds, while DPO only paired best-vs-worst. The obvious followup is to re-run KTO on a 53-example subset, isolating the loss function from the data-quantity confound. Not done yet — flagging as future work.
 - Both methods trained 16–43 epochs over a small dataset (53 train prompts × 4 candidates = 212 candidates), so some training-set memorization. The held-out numbers are what matter, but a larger dataset would give a stronger story.
 - The reward pipeline is itself imperfect (Whisper makes mistakes; UTMOS is a learned approximation of human ratings; ECAPA is one of several reasonable speaker encoders). The "preferences" the methods are learning to satisfy are *the reward pipeline's preferences*, not human preferences directly.
 
@@ -103,10 +104,7 @@ uv add 'vllm==0.6.4.post1'
 ./run.sh vllm-check
 ```
 
-Every training script accepts `--smoke-test` for a fast (~5–10 min) pipeline check before committing to a long run.
-
-All training scripts will accept `--smoke-test` to run 5 steps with batch size 1 for a
-final pipeline check before committing to a real run.
+Every training script accepts `--smoke-test` for a fast (~5–10 min) pipeline check (5 steps, batch size 1) before committing to a long run.
 
 ## Rented compute setup (RunPod)
 
@@ -209,9 +207,9 @@ Sub-metrics:
 - **UTMOS** via [`fakerybakery/utmos`](https://github.com/fakerybakery/utmos). Range `[1, 5]`,
   min-max normalized to `[0, 1]` in composite.
 - **speaker_sim** via SpeechBrain ECAPA-TDNN cosine similarity. Range `[-1, 1]`, mapped to
-  `[0, 1]` in composite. Optional; off by default.
+  `[0, 1]` in composite. Off in the `CompositeWeights` default; enabled for the dataset and eval runs in this project.
 
-Default composite weights for the dataset runs: `0.6 * (1 - WER) + 0.4 * norm(UTMOS) + 0.3 * spk_sim`, renormalized so the sum is 1.
+Effective composite weights used throughout this project: **WER 0.46, UTMOS 0.31, speaker_sim 0.23** (configured in `src/rewards/composite.py` as `0.6 / 0.4 / 0.3` pre-normalization).
 
 ## Project structure
 
