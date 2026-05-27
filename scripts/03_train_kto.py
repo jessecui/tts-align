@@ -59,6 +59,24 @@ def _patch_whisper_load_model_cache() -> None:
 _patch_whisper_load_model_cache()
 
 
+def _patch_kto_trainer_sampler() -> None:
+    """TRL 0.16/0.17's KTOTrainer._get_train_sampler takes only `self`, but
+    transformers >=4.50 calls it with the dataset as an extra positional arg.
+    Swallow the extra arg so the existing implementation still works.
+    """
+    from trl import KTOTrainer
+
+    _orig = KTOTrainer._get_train_sampler
+
+    def _wrapped(self, *args, **kwargs):
+        return _orig(self)
+
+    KTOTrainer._get_train_sampler = _wrapped
+
+
+_patch_kto_trainer_sampler()
+
+
 def build_outetts_prompt_str(iface, prompt_text: str) -> str:
     return iface.prompt_processor.get_completion_prompt(prompt_text)
 
