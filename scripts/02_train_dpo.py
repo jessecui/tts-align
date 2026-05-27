@@ -46,6 +46,29 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("dpo")
 
 
+def _patch_whisper_load_model_cache() -> None:
+    """outetts's create_speaker re-loads the Whisper checkpoint from disk on
+    every call (~45s each on this hardware). It's the dominant cost when
+    encoding the DPO dataset. Monkey-patch whisper.load_model so subsequent
+    calls return the already-loaded model.
+    """
+    import whisper
+
+    _orig = whisper.load_model
+    _cache: dict[tuple, object] = {}
+
+    def _cached(name="small", device=None, *args, **kwargs):
+        key = (name, str(device))
+        if key not in _cache:
+            _cache[key] = _orig(name, device=device, *args, **kwargs)
+        return _cache[key]
+
+    whisper.load_model = _cached
+
+
+_patch_whisper_load_model_cache()
+
+
 def build_outetts_prompt_str(iface, prompt_text: str) -> str:
     """The DPO 'prompt': the OuteTTS inference prompt for `prompt_text`.
 
