@@ -22,12 +22,23 @@ Headlines:
 - **Both cut the catastrophic-failure rate by ~25% relative** (13.3% → 10.0%).
 - **WER dropped 16% relative** under KTO despite the LM not directly optimizing WER — the preference loss steers toward sequences that score well on the composite reward, and that generalizes to held-out prompts.
 
+### Why KTO > DPO here — a counterintuitive result worth examining
+
+Textbook intuition is that DPO should be more robust: paired comparisons cancel absolute-scale noise, and the loss has a clean closed-form RL derivation. In this setup KTO won on every metric. A few structural reasons:
+
+- **KTO got more training items.** DPO uses only `best` vs `worst` per prompt → 53 pairs. KTO labels the top and bottom thirds of all candidates → ~140 examples. 2.5x more training items drawn from candidates DPO discarded.
+- **KTO overfit less.** DPO ran 43 epochs over 53 pairs; KTO ran 17 epochs over 140 examples. Less repetition → better held-out generalization.
+- **Our pairs are noisy.** We constructed pairs by sorting candidates on a noisy composite score (Whisper + UTMOS + ECAPA each have measurement error). When chosen and rejected are close in true quality, the sort can flip, and DPO trains in the wrong direction with full force. KTO's quantile thresholds skip the ambiguous middle entirely.
+- **Within-prompt margins are usually small.** The 4 candidates per prompt at temps [0.7, 0.9, 1.0, 1.2] often score within 0.03 of each other. DPO is forced to declare a strong "this >> that" preference; KTO just sorts top-third vs bottom-third.
+
+The "DPO is more robust" intuition comes from a setting with clean, human-labeled paired preferences. With synthetic preferences from an automatic reward model, KTO's structural advantages — more data, more noise tolerance, asymmetric loss — dominate.
+
 Honest caveats:
 - 30 prompts is small. No confidence intervals; differences between DPO and KTO at this scale could be one std-dev of noise.
 - Both methods trained 16–43 epochs over a small dataset (53 train prompts × 4 candidates = 212 candidates), so some training-set memorization. The held-out numbers are what matter, but a larger dataset would give a stronger story.
 - The reward pipeline is itself imperfect (Whisper makes mistakes; UTMOS is a learned approximation of human ratings; ECAPA is one of several reasonable speaker encoders). The "preferences" the methods are learning to satisfy are *the reward pipeline's preferences*, not human preferences directly.
 
-Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the prompts preference optimization had the most room to help on) at [`results/samples/`](results/samples/). Each prompt directory contains `base.wav`, `dpo.wav`, `kto.wav` plus the source text. Full audio under [`results/audio/<method>/`](results/audio/) on the rented box (gitignored — too big for the repo). Training curves on [wandb](https://wandb.ai/) under the `tts-rl` project.
+Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the prompts preference optimization had the most room to help on) at [`results/samples/`](results/samples/). Each prompt directory contains `base.wav`, `dpo.wav`, `kto.wav` plus the source text. Full audio under [`results/audio/<method>/`](results/audio/) on the rented box (gitignored — too big for the repo). Training curves: [DPO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/m39opezt) · [KTO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/6i6cxo7x) (wandb).
 
 ## Plan
 
