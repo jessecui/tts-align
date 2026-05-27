@@ -1,19 +1,45 @@
-# tts-rl: DPO, KTO, and GRPO on a small autoregressive TTS model
+# tts-rl: DPO and KTO on a small autoregressive TTS model
 
-Exploratory hobby project demonstrating three preference-optimization methods — **DPO**, **KTO**, and **GRPO** —
-applied to the same small autoregressive codec-LM TTS model, with comparable automatic evals.
+Exploratory hobby project applying two preference-optimization methods — **DPO** and **KTO** —
+to the same small autoregressive codec-LM TTS model ([OuteAI/Llama-OuteTTS-1.0-1B](https://huggingface.co/OuteAI/Llama-OuteTTS-1.0-1B)),
+with a held-out comparison eval against the base model.
 
-**Status:** Phase 1 (reward pipeline + repo scaffold). Training scripts are not yet written.
+**Status:** done. DPO and KTO both trained, evaluated against base on 30 held-out prompts. Results below.
+
+## Results
+
+30-prompt held-out eval. Same reward pipeline as training (Whisper-small WER, UTMOS, ECAPA-TDNN speaker similarity, composite). Both methods used identical LoRA setups (rank 16, alpha 32, attention + MLP projections), 300 training steps, beta 0.1.
+
+| method | mean WER | mean UTMOS | mean speaker_sim | mean composite | catastrophic failure rate (WER > 30%) |
+|---|---|---|---|---|---|
+| base | 0.068 | 4.36 | 0.580 | 0.871 | 13.3% |
+| DPO  | 0.061 | 4.38 | 0.586 | 0.876 | 10.0% |
+| KTO  | **0.057** | **4.38** | **0.619** | **0.882** | **10.0%** |
+
+Headlines:
+- **Both methods beat the base model** on every metric.
+- **KTO edges DPO across the board.** Biggest win is on speaker similarity (+0.04 over base, +0.03 over DPO).
+- **Both cut the catastrophic-failure rate by ~25% relative** (13.3% → 10.0%).
+- **WER dropped 16% relative** under KTO despite the LM not directly optimizing WER — the preference loss steers toward sequences that score well on the composite reward, and that generalizes to held-out prompts.
+
+Honest caveats:
+- 30 prompts is small. No confidence intervals; differences between DPO and KTO at this scale could be one std-dev of noise.
+- Both methods trained 16–43 epochs over a small dataset (53 train prompts × 4 candidates = 212 candidates), so some training-set memorization. The held-out numbers are what matter, but a larger dataset would give a stronger story.
+- The reward pipeline is itself imperfect (Whisper makes mistakes; UTMOS is a learned approximation of human ratings; ECAPA is one of several reasonable speaker encoders). The "preferences" the methods are learning to satisfy are *the reward pipeline's preferences*, not human preferences directly.
+
+Sample audio under [`results/audio/<method>/`](results/audio/). Training curves on [wandb](https://wandb.ai/) under the `tts-rl` project.
 
 ## Plan
 
 | Phase | Scope                                              | Status |
 |-------|----------------------------------------------------|--------|
-| 1     | Repo scaffold + reward pipeline + smoke test       | In progress |
-| 2     | Preference dataset generation + DPO end-to-end     | Not started |
-| 3     | KTO                                                | Not started |
-| 4     | GRPO (online; vLLM-accelerated sampling)           | Not started |
-| 5     | Held-out comparison eval + writeup                 | Not started |
+| 1     | Repo scaffold + reward pipeline + smoke test       | Done |
+| 2     | Preference dataset generation + DPO end-to-end     | Done |
+| 3     | KTO                                                | Done |
+| 4     | GRPO (online; vLLM-accelerated sampling)           | Scoped out — see below |
+| 5     | Held-out comparison eval + writeup                 | Done |
+
+**Why GRPO was dropped from the original plan:** the original pitch was a three-way comparison (DPO/KTO/GRPO). I scoped down after seeing how much engineering the OuteTTS integration took — particularly the word-aligned codec-token training format, which doesn't match the "raw audio tokens" assumption DPO/KTO/GRPO infrastructure usually targets. GRPO adds another order of magnitude of complexity (online rollouts inside the training loop, reward computation per step) on top of that. The remaining DPO-vs-KTO comparison is still a meaningful demonstration of preference optimization on TTS, just not the broader DPO-vs-KTO-vs-GRPO comparison originally pitched. Future work — happy to revisit if the project picks up steam.
 
 ## Model choice
 
@@ -44,21 +70,29 @@ uv sync
 # 2. Set your wandb key (get it from https://wandb.ai/authorize)
 export WANDB_API_KEY=<your-key>
 
-# 3. Phase 1: verify the reward pipeline works on a few generated samples (~5-8 min)
+# 3. Verify the reward pipeline works on a few generated samples (~5-8 min)
 #    Downloads OuteTTS-1.0-1B (~2GB), DAC decoder, Whisper-small (~500MB), UTMOS, ECAPA-TDNN.
-uv run python scripts/00_smoke_test_rewards.py --voice-cloning
+./run.sh smoke --voice-cloning
 
-# 4. Phase 1: confirm vLLM works with the chosen model (~2-3 min)
+# 4. Generate the scored preference dataset (~2-3 hours, ~$2-3 on A100)
+#    Resumable — Ctrl-C and re-run, it picks up where it left off.
+./run.sh dataset
+
+# 5. Train DPO with LoRA (~20 min, ~$0.40)
+./run.sh dpo
+
+# 6. Train KTO with LoRA (~20 min, ~$0.40)
+./run.sh kto
+
+# 7. Held-out eval comparing base / DPO / KTO (~45 min, ~$0.80)
+./run.sh eval
+
+# Optional: verify vLLM compatibility — was on the path for GRPO, kept for future use
 uv add 'vllm==0.6.4.post1'
-uv run python scripts/00b_check_vllm_compat.py
-
-# --- Below are not yet implemented; placeholder commands for future phases ---
-# uv run python scripts/01_generate_dataset.py        # Phase 2: ~20-30 min
-# uv run python scripts/02_train_dpo.py               # Phase 2: ~20-30 min
-# uv run python scripts/03_train_kto.py               # Phase 3: ~20-30 min
-# uv run python scripts/04_train_grpo.py              # Phase 4: ~1-3 hours
-# uv run python scripts/05_evaluate_all.py            # Phase 5: ~20 min
+./run.sh vllm-check
 ```
+
+Every training script accepts `--smoke-test` for a fast (~5–10 min) pipeline check before committing to a long run.
 
 All training scripts will accept `--smoke-test` to run 5 steps with batch size 1 for a
 final pipeline check before committing to a real run.
@@ -145,7 +179,7 @@ HF cache all persist).
 ## Reward pipeline
 
 The composite reward function (`src/rewards/composite.py`) is the single entrypoint used by
-both offline dataset scoring (Phase 2) and online GRPO reward computation (Phase 4).
+offline dataset scoring (Phase 2) and the held-out eval (Phase 5).
 
 ```python
 from src.rewards import score
@@ -166,8 +200,7 @@ Sub-metrics:
 - **speaker_sim** via SpeechBrain ECAPA-TDNN cosine similarity. Range `[-1, 1]`, mapped to
   `[0, 1]` in composite. Optional; off by default.
 
-Default composite weights: `0.6 * (1 - WER) + 0.4 * norm(UTMOS)`. For voice-cloning runs we'll
-add a `speaker_sim` term (planned weight 0.3, with the other two renormalized).
+Default composite weights for the dataset runs: `0.6 * (1 - WER) + 0.4 * norm(UTMOS) + 0.3 * spk_sim`, renormalized so the sum is 1.
 
 ## Project structure
 
@@ -175,26 +208,31 @@ add a `speaker_sim` term (planned weight 0.3, with the other two renormalized).
 .
 ├── README.md                     this file
 ├── pyproject.toml                pinned deps (uv-managed)
-├── run.sh                        convenience wrapper: ./run.sh smoke, etc.
-├── config/                       per-method YAMLs (added in Phases 2-4)
+├── run.sh                        convenience wrapper: ./run.sh smoke, dataset, dpo, kto, eval
+├── config/
+│   ├── dpo.yaml                  DPO hyperparameters
+│   └── kto.yaml                  KTO hyperparameters
 ├── data/
-│   └── hard_prompts.txt          curated stress-test prompts
+│   ├── easy_prompts.txt          starter set of natural English prompts
+│   ├── hard_prompts.txt          curated stress-test prompts
+│   └── dataset.parquet           scored preference dataset (committed)
 ├── src/
 │   ├── rewards/                  WER, UTMOS, speaker_sim, composite
-│   ├── data/                     dataset generation/loading (Phase 2)
-│   ├── methods/                  dpo.py, kto.py, grpo.py (Phases 2-4)
-│   ├── eval/                     held-out eval (Phase 5)
-│   └── utils/                    logging, checkpointing, LoRA helpers
+│   ├── data/                     dataset loading + chosen/rejected + KTO labels
+│   ├── methods/                  dpo.py, kto.py — from-scratch losses for reference
+│   └── utils/                    seeding + LoRA config helpers
 ├── scripts/
 │   ├── 00_smoke_test_rewards.py     Phase 1
 │   ├── 00b_check_vllm_compat.py     Phase 1
-│   ├── 01_generate_dataset.py       Phase 2 (TBD)
-│   ├── 02_train_dpo.py              Phase 2 (TBD)
-│   ├── 03_train_kto.py              Phase 3 (TBD)
-│   ├── 04_train_grpo.py             Phase 4 (TBD)
-│   └── 05_evaluate_all.py           Phase 5 (TBD)
-├── results/                      eval tables, sample audio
-└── runs/                         training outputs (gitignored)
+│   ├── 01_generate_dataset.py       Phase 2
+│   ├── 02_train_dpo.py              Phase 2
+│   ├── 03_train_kto.py              Phase 3
+│   └── 05_evaluate_all.py           Phase 5
+├── results/
+│   ├── audio/<method>/              sample audio per method
+│   ├── comparison.md                comparison table
+│   └── eval.parquet                 per-sample eval scores
+└── runs/                         training checkpoints (gitignored)
 ```
 
 ## Notes on determinism
