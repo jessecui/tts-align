@@ -23,7 +23,7 @@ case "$cmd" in
     vllm-check)   uv run python scripts/00b_check_vllm_compat.py "$@" ;;
     dataset)      uv run python scripts/01_generate_dataset.py "$@" ;;
     dpo)          uv run python scripts/02_train_dpo.py "$@" ;;
-    kto)          echo "[Phase 3] not yet implemented" && exit 2 ;;
+    kto)          uv run python scripts/03_train_kto.py "$@" ;;
     grpo)         echo "[Phase 4] not yet implemented" && exit 2 ;;
     eval)         echo "[Phase 5] not yet implemented" && exit 2 ;;
     all)          echo "[Phase 5] not yet implemented" && exit 2 ;;

@@ -1,0 +1,53 @@
+# KTO hyperparameters. Used by scripts/03_train_kto.py.
+#
+# KTO works on binary labels per candidate, not paired comparisons. Thresholds
+# are auto-derived from the dataset's composite distribution (quantiles), so
+# the labels track whatever this particular run scored. See the script.
+
+seed: 42
+model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
+dataset_path: "data/dataset.parquet"
+
+# LoRA — identical to DPO so the two are directly comparable.
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+# Label thresholds, in quantile space [0, 1]. With ~210 train candidates, 0.66
+# and 0.33 give us ~70 desirable / ~70 undesirable / ~70 dropped — a balanced
+# binary split that uses two-thirds of the data.
+desirable_quantile: 0.66
+undesirable_quantile: 0.33
+
+# KTO loss
+beta: 0.1                # same KL strength as DPO
+
+# KTOTrainer auto-balances by default; we set explicit weights here so the
+# config is reproducible. The trainer will warn if desirable:undesirable ratio
+# is too far from 1.0 — we use thresholds above to keep it balanced.
+desirable_weight: 1.0
+undesirable_weight: 1.0
+
+# Optimization
+max_steps: 300
+learning_rate: 5.0e-5
+batch_size: 4            # per-device; KTO can use higher batch since no paired sequences
+grad_accum: 2
+warmup_ratio: 0.05
+max_length: 2048
+max_prompt_length: 512
+
+# Logging & checkpointing
+output_dir: "runs/kto"
+logging_steps: 10
+save_steps: 100
+wandb_project: "tts-rl"
