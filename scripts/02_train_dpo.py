@@ -235,12 +235,13 @@ def main() -> int:
 
     # With PEFT loaded on the policy, passing ref_model=None tells DPOTrainer to
     # disable the adapter to obtain reference logprobs. Saves a full model copy.
+    # TRL >=0.16 renamed `tokenizer` -> `processing_class`. We unify here.
     trainer = DPOTrainer(
         model=model,
         ref_model=None,
         args=dpo_args,
         train_dataset=train_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     logger.info("starting DPO training: run=%s steps=%d", run_name, dpo_args.max_steps)
