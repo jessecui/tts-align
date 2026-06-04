@@ -1,4 +1,4 @@
-# tts-rl: DPO and KTO on a small autoregressive TTS model
+# TTSAlign: Preference Optimization (DPO vs. KTO) for Autoregressive Text-to-Speech
 
 Exploratory hobby project applying two preference-optimization methods — **DPO** and **KTO** —
 to the same small autoregressive codec-LM TTS model ([OuteAI/Llama-OuteTTS-1.0-1B](https://huggingface.co/OuteAI/Llama-OuteTTS-1.0-1B)),
