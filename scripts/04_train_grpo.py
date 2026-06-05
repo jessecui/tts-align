@@ -270,13 +270,24 @@ def main() -> int:
         tokenizer.pad_token = tokenizer.eos_token
 
     # Null out the chat_template so TRL doesn't wrap our already-formatted
-    # OuteTTS prompts in <|im_start|>user...<|im_end|> structure. Our prompts
-    # are pre-built by outetts.prompt_processor and need to reach the model
-    # verbatim; without this, TRL applies the Llama chat template and the model
-    # responds with English text instead of continuing audio tokens.
+    # OuteTTS prompts. Our prompts are pre-built by outetts.prompt_processor
+    # and need to reach the model verbatim.
     if tokenizer.chat_template is not None:
-        logger.info("clearing tokenizer.chat_template to prevent TRL from re-wrapping prompts")
+        logger.info("clearing tokenizer.chat_template (was %r) to prevent TRL from re-wrapping prompts",
+                    tokenizer.chat_template[:60])
         tokenizer.chat_template = None
+
+    # Also disable BOS / EOS auto-insertion. Llama tokenizers default to
+    # prepending <|begin_of_text|>, but our prompts already begin with
+    # <|im_start|> followed by the OuteTTS audio-prefix structure. A leading
+    # BOS makes the model treat the prompt as "start fresh" and emit plain
+    # text instead of continuing the audio sequence. The bare-generate
+    # diagnostic worked precisely because it called tokenizer(...,
+    # add_special_tokens=False); replicate that here.
+    for attr in ("add_bos_token", "add_eos_token"):
+        if getattr(tokenizer, attr, None):
+            logger.info("setting tokenizer.%s = False", attr)
+            setattr(tokenizer, attr, False)
 
     logger.info("loading base Llama weights: %s", cfg["model_id"])
     model = AutoModelForCausalLM.from_pretrained(
