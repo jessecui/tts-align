@@ -19,12 +19,13 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
-    smoke)        uv run python scripts/00_smoke_test_rewards.py "$@" ;;
-    vllm-check)   uv run python scripts/00b_check_vllm_compat.py "$@" ;;
-    dataset)      uv run python scripts/01_generate_dataset.py "$@" ;;
-    dpo)          uv run python scripts/02_train_dpo.py "$@" ;;
-    kto)          uv run python scripts/03_train_kto.py "$@" ;;
-    grpo)         echo "[Phase 4] not yet implemented" && exit 2 ;;
+    smoke)            uv run python scripts/00_smoke_test_rewards.py "$@" ;;
+    vllm-check)       uv run python scripts/00b_check_vllm_compat.py "$@" ;;
+    roundtrip-check)  uv run python scripts/00c_check_audio_roundtrip.py "$@" ;;
+    dataset)          uv run python scripts/01_generate_dataset.py "$@" ;;
+    dpo)              uv run python scripts/02_train_dpo.py "$@" ;;
+    kto)              uv run python scripts/03_train_kto.py "$@" ;;
+    grpo)             uv run python scripts/04_train_grpo.py "$@" ;;
     eval)         uv run python scripts/05_evaluate_all.py "$@" ;;
     all)          echo "[Phase 5] not yet implemented" && exit 2 ;;
     "")           echo "Usage: ./run.sh {smoke|vllm-check|dataset|dpo|kto|grpo|eval|all}" && exit 1 ;;

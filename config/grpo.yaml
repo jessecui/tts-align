@@ -1,0 +1,60 @@
+# GRPO hyperparameters. Used by scripts/04_train_grpo.py.
+#
+# GRPO is online: every step samples fresh rollouts from the policy, runs the
+# reward function on each, computes group-relative advantages, and updates.
+# More finicky than DPO/KTO — expect to tune `beta` (KL coefficient) before
+# committing to a full run.
+
+seed: 42
+model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
+dataset_path: "data/dataset.parquet"
+reference_audio_path: "data/generated/reference_speaker.wav"
+
+# LoRA — same as DPO/KTO for an apples-to-apples LoRA budget across methods.
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+# Reward
+reward_weights:
+  wer: 0.6
+  utmos: 0.4
+  speaker_sim: 0.3
+
+# GRPO core
+beta: 0.05               # KL coefficient — start here, halve/double for tuning
+num_generations: 4       # group size K (rollouts per prompt)
+num_iterations: 1        # gradient updates per rollout batch (1 = on-policy)
+
+# Optimization — smaller LR than DPO/KTO because online RL is noisier
+max_steps: 200
+learning_rate: 5.0e-6
+batch_size: 1            # per-device PROMPTS (effective generations = batch * num_generations)
+grad_accum: 4
+warmup_ratio: 0.05
+max_prompt_length: 256
+max_completion_length: 2048   # OuteTTS audio sequences are long
+
+# Generation
+temperature: 1.0
+top_p: 0.95
+
+# vLLM for fast sampling — Phase 1 confirmed compatibility.
+# Set to false to fall back to plain transformers.generate (slower, simpler debugging).
+use_vllm: true
+vllm_gpu_memory_utilization: 0.4   # leave ~24 GB for the training model + reward stack
+
+# Logging & checkpointing
+output_dir: "runs/grpo"
+logging_steps: 5
+save_steps: 50
+wandb_project: "tts-rl"

@@ -233,7 +233,7 @@ def main() -> int:
     parser.add_argument("--audio-dir", type=Path, default=Path("results/audio"))
     parser.add_argument("--output", type=Path, default=Path("results/eval.parquet"))
     parser.add_argument("--summary", type=Path, default=Path("results/comparison.md"))
-    parser.add_argument("--methods", nargs="+", default=["base", "dpo", "kto"])
+    parser.add_argument("--methods", nargs="+", default=["base", "dpo", "kto", "grpo"])
     parser.add_argument("--reference-audio", type=Path,
                         default=Path("data/generated/reference_speaker.wav"))
     parser.add_argument("--base-model", default="OuteAI/Llama-OuteTTS-1.0-1B")
@@ -276,7 +276,7 @@ def main() -> int:
     for method in args.methods:
         if method == "base":
             model_paths[method] = None
-        elif method in ("dpo", "kto"):
+        elif method in ("dpo", "kto", "grpo"):
             adapter_dir = find_latest_checkpoint(Path("runs") / method)
             merged_dir = adapter_dir.parent / f"{adapter_dir.name}-merged"
             merge_lora_to_dir(adapter_dir, args.base_model, merged_dir)

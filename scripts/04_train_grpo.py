@@ -1,0 +1,283 @@
+"""GRPO training on the same prompts as DPO/KTO, but online.
+
+Pipeline:
+    1. Build a dataset of *prompts only* (no completions; rollouts come from the policy).
+    2. Wrap our reward pipeline as a callable that:
+        completion_str -> token IDs -> extract audio codes -> DAC decode -> waveform
+            -> WER + UTMOS + speaker_sim -> composite reward.
+    3. Hand off to trl.GRPOTrainer with vLLM-accelerated rollouts.
+
+NOTE: this assumes the audio round-trip works as the diagnostic checks.
+Run `./run.sh roundtrip-check` first.
+
+Smoke test (`--smoke-test`):
+    5 prompts, 5 steps, num_generations=2 (smaller group), vLLM disabled.
+    Verifies the pipeline end-to-end without burning real compute.
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import re
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import soundfile as sf
+import torch
+import yaml
+from datasets import Dataset
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.data import load_scored_dataset  # noqa: E402
+from src.rewards import CompositeWeights, RewardConfig, score  # noqa: E402
+from src.utils.lora import make_lora_config  # noqa: E402
+from src.utils.seed import set_seed  # noqa: E402
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("grpo")
+
+
+def _patch_whisper_load_model_cache() -> None:
+    """Same monkey-patch as DPO/KTO scripts: cache Whisper model loads."""
+    import whisper
+
+    _orig = whisper.load_model
+    _cache: dict[tuple, object] = {}
+
+    def _cached(name="small", device=None, *args, **kwargs):
+        key = (name, str(device))
+        if key not in _cache:
+            _cache[key] = _orig(name, device=device, *args, **kwargs)
+        return _cache[key]
+
+    whisper.load_model = _cached
+
+
+_patch_whisper_load_model_cache()
+
+
+# Regex to pull the target text back out of an OuteTTS inference prompt.
+# get_completion_prompt(text) produces "<|im_start|>\n<|text_start|>{text}<|text_end|>\n<|audio_start|>\n".
+_TEXT_FROM_PROMPT_RE = re.compile(r"<\|text_start\|>(.*?)<\|text_end\|>", re.DOTALL)
+
+
+def extract_text_from_prompt(prompt_str: str) -> str:
+    m = _TEXT_FROM_PROMPT_RE.search(prompt_str)
+    if not m:
+        raise ValueError(f"couldn't find <|text_start|>...<|text_end|> in prompt: {prompt_str[:200]}")
+    return m.group(1).strip()
+
+
+def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int | None, reward_cfg: RewardConfig):
+    """Build a TRL-compatible reward callable.
+
+    TRL signature: `reward_func(prompts: list[str], completions: list[str], **kwargs) -> list[float]`.
+    `prompts` are the dataset prompts; `completions` are what the policy generated.
+    Both are decoded text strings, not token IDs.
+
+    For each completion we:
+        1. Tokenize back to integer IDs.
+        2. Use OuteTTS to extract audio codes from the token stream.
+        3. DAC-decode codes -> waveform.
+        4. Run our composite reward.
+    Catastrophic failures (un-decodable sequences, empty audio, etc.) score 0.
+    """
+    target_sr = int(getattr(iface.audio_codec, "sr", 24000))
+
+    def _decode_to_audio(completion_str: str) -> tuple[np.ndarray, int] | None:
+        ids = tokenizer.encode(completion_str, add_special_tokens=False)
+        try:
+            codes = iface.prompt_processor.extract_audio_from_tokens(ids)
+        except Exception as e:
+            logger.warning("extract_audio_from_tokens failed: %s", e)
+            return None
+        try:
+            audio = iface.get_audio(codes)
+        except Exception:
+            try:
+                audio = iface.audio_codec.decode(codes)
+            except Exception as e:
+                logger.warning("DAC decode failed: %s", e)
+                return None
+        # Normalize to (T,) float32 numpy on CPU
+        if hasattr(audio, "audio"):
+            audio = audio.audio
+        if hasattr(audio, "cpu"):
+            audio = audio.cpu().numpy()
+        arr = np.asarray(audio).squeeze()
+        if arr.ndim > 1:
+            arr = arr.mean(axis=0) if arr.shape[0] < arr.shape[-1] else arr.mean(axis=-1)
+        arr = arr.astype(np.float32)
+        if arr.size < 16_000 * 0.2:   # less than 0.2s of audio -> garbage
+            return None
+        return arr, target_sr
+
+    def reward_func(prompts: list[str], completions: list[str], **kwargs) -> list[float]:
+        rewards: list[float] = []
+        for prompt, completion in zip(prompts, completions):
+            try:
+                target_text = extract_text_from_prompt(prompt)
+            except Exception as e:
+                logger.warning("bad prompt: %s", e)
+                rewards.append(0.0)
+                continue
+            decoded = _decode_to_audio(completion)
+            if decoded is None:
+                rewards.append(0.0)
+                continue
+            audio_arr, sr = decoded
+            try:
+                scores = score(
+                    audio=audio_arr,
+                    target_text=target_text,
+                    sample_rate=sr,
+                    reference_audio=ref_audio,
+                    reference_sr=ref_sr,
+                    config=reward_cfg,
+                )
+                rewards.append(float(scores["composite"]))
+            except Exception as e:
+                logger.warning("scoring failed: %s", e)
+                rewards.append(0.0)
+        return rewards
+
+    return reward_func
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=Path("config/grpo.yaml"))
+    parser.add_argument("--smoke-test", action="store_true")
+    parser.add_argument("--max-prompts", type=int, default=None,
+                        help="cap on training prompts (default: use all train split)")
+    args = parser.parse_args()
+
+    cfg = yaml.safe_load(args.config.read_text())
+    set_seed(cfg["seed"])
+
+    # ----- Prompts (train split, deduped) -----
+    df = load_scored_dataset(Path(cfg["dataset_path"]))
+    train_df = df[df["split"] == "train"][["prompt_id", "prompt"]].drop_duplicates("prompt_id")
+    logger.info("train prompts available: %d", len(train_df))
+
+    # ----- OuteTTS interface (needed for prompt building + audio decoding inside the reward fn) -----
+    logger.info("loading OuteTTS interface (HF backend)")
+    import outetts
+
+    iface = outetts.Interface(config=outetts.ModelConfig.auto_config(
+        model=outetts.Models.VERSION_1_0_SIZE_1B,
+        backend=outetts.Backend.HF,
+    ))
+
+    # ----- Build prompt strings (canonical inference prompt for each text) -----
+    prompts: list[dict] = []
+    for _, row in train_df.iterrows():
+        prompt_str = iface.prompt_processor.get_completion_prompt(row["prompt"])
+        prompts.append({"prompt": prompt_str})
+
+    if args.smoke_test:
+        prompts = prompts[:5]
+        logger.info("--smoke-test: 5 prompts")
+    elif args.max_prompts is not None:
+        prompts = prompts[: args.max_prompts]
+
+    train_ds = Dataset.from_list(prompts)
+    logger.info("training dataset: %d prompts", len(train_ds))
+
+    # ----- Tokenizer + base model -----
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(cfg["model_id"])
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    logger.info("loading base Llama weights: %s", cfg["model_id"])
+    model = AutoModelForCausalLM.from_pretrained(
+        cfg["model_id"],
+        torch_dtype=torch.bfloat16,
+        device_map="cuda",
+    )
+
+    # ----- Reference audio for speaker_sim -----
+    ref_audio: np.ndarray | None = None
+    ref_sr: int | None = None
+    ref_path = Path(cfg["reference_audio_path"])
+    if ref_path.exists():
+        a, s = sf.read(str(ref_path), always_2d=False)
+        if a.ndim > 1:
+            a = a.mean(axis=1)
+        ref_audio = a.astype(np.float32)
+        ref_sr = int(s)
+    else:
+        logger.warning("no reference audio at %s; speaker_sim will be 0-weighted", ref_path)
+
+    reward_cfg = RewardConfig(weights=CompositeWeights(
+        wer=cfg["reward_weights"]["wer"],
+        utmos=cfg["reward_weights"]["utmos"],
+        speaker_sim=cfg["reward_weights"]["speaker_sim"] if ref_audio is not None else 0.0,
+    ))
+
+    reward_func = make_reward_fn(iface, tokenizer, ref_audio, ref_sr, reward_cfg)
+
+    # ----- LoRA -----
+    from peft import get_peft_model
+
+    lora_cfg = make_lora_config(
+        r=cfg["lora"]["r"],
+        alpha=cfg["lora"]["alpha"],
+        dropout=cfg["lora"]["dropout"],
+        target_modules=cfg["lora"]["target_modules"],
+    )
+    model = get_peft_model(model, lora_cfg)
+    model.print_trainable_parameters()
+
+    # ----- GRPOTrainer -----
+    from trl import GRPOConfig, GRPOTrainer
+
+    run_name = f"grpo-{'smoke-' if args.smoke_test else ''}{int(time.time())}"
+    grpo_args = GRPOConfig(
+        output_dir=str(Path(cfg["output_dir"]) / run_name),
+        beta=cfg["beta"],
+        num_generations=2 if args.smoke_test else cfg["num_generations"],
+        num_iterations=cfg["num_iterations"],
+        max_steps=5 if args.smoke_test else cfg["max_steps"],
+        per_device_train_batch_size=1 if args.smoke_test else cfg["batch_size"],
+        gradient_accumulation_steps=1 if args.smoke_test else cfg["grad_accum"],
+        learning_rate=cfg["learning_rate"],
+        warmup_ratio=cfg["warmup_ratio"],
+        logging_steps=cfg["logging_steps"],
+        save_steps=cfg["save_steps"] if not args.smoke_test else 999_999,
+        bf16=True,
+        max_prompt_length=cfg["max_prompt_length"],
+        max_completion_length=cfg["max_completion_length"],
+        temperature=cfg["temperature"],
+        top_p=cfg["top_p"],
+        use_vllm=False if args.smoke_test else cfg["use_vllm"],
+        vllm_gpu_memory_utilization=cfg["vllm_gpu_memory_utilization"],
+        report_to=[] if args.smoke_test else ["wandb"],
+        run_name=run_name,
+        seed=cfg["seed"],
+        remove_unused_columns=False,
+    )
+
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=reward_func,
+        args=grpo_args,
+        train_dataset=train_ds,
+        processing_class=tokenizer,
+    )
+
+    logger.info("starting GRPO training: run=%s steps=%d", run_name, grpo_args.max_steps)
+    trainer.train()
+    trainer.save_model()
+    logger.info("training complete. checkpoints under %s", grpo_args.output_dir)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
