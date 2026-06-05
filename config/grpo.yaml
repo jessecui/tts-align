@@ -41,7 +41,7 @@ learning_rate: 5.0e-6
 batch_size: 1            # per-device PROMPTS (effective generations = batch * num_generations)
 grad_accum: 4
 warmup_ratio: 0.05
-max_prompt_length: 256
+max_prompt_length: 4096       # speaker reference is ~600 tokens; 4k leaves room
 max_completion_length: 2048   # OuteTTS audio sequences are long
 
 # Generation

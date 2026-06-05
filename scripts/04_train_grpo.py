@@ -240,9 +240,17 @@ def main() -> int:
     ))
 
     # ----- Build prompt strings (canonical inference prompt for each text) -----
+    # We MUST pass a speaker reference here. OuteTTS-1.0 was trained with a
+    # speaker reference in every generation prompt; without one, the bare
+    # `<|text_start|>X<|text_end|>\n<|audio_start|>\n` prompt drives the model
+    # to emit plain English text (echoing the input) instead of codec tokens.
+    # `EN-FEMALE-1-NEUTRAL` is the same default speaker we used in Phases 2/5.
+    speaker = iface.load_default_speaker("EN-FEMALE-1-NEUTRAL")
+    logger.info("using default speaker EN-FEMALE-1-NEUTRAL for all generation prompts")
+
     prompts: list[dict] = []
     for _, row in train_df.iterrows():
-        prompt_str = iface.prompt_processor.get_completion_prompt(row["prompt"])
+        prompt_str = iface.prompt_processor.get_completion_prompt(row["prompt"], speaker=speaker)
         prompts.append({"prompt": prompt_str})
 
     if args.smoke_test:
