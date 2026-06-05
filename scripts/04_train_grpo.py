@@ -332,6 +332,8 @@ def main() -> int:
         max_completion_length=cfg["max_completion_length"],
         temperature=cfg["temperature"],
         top_p=cfg["top_p"],
+        top_k=cfg.get("top_k", 40),
+        repetition_penalty=cfg.get("repetition_penalty", 1.1),
         use_vllm=False if args.smoke_test else cfg["use_vllm"],
         vllm_gpu_memory_utilization=cfg["vllm_gpu_memory_utilization"],
         report_to=[] if args.smoke_test else ["wandb"],

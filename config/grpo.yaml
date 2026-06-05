@@ -44,13 +44,17 @@ warmup_ratio: 0.05
 max_prompt_length: 4096       # speaker reference is ~600 tokens; 4k leaves room
 max_completion_length: 2048   # OuteTTS audio sequences are long
 
-# Generation
-# OuteTTS's own Interface.generate uses temperature=0.4 by default and the model
-# falls out of the audio-token distribution into plain English text at high temps.
-# 0.7 is a compromise: still some exploration (GRPO needs reward variance) but
-# low enough to keep the model emitting codec tokens.
-temperature: 0.7
-top_p: 0.95
+# Generation — OuteTTS 1.0 canonical sampling settings.
+# The model docs are emphatic: "use these exact settings" or the model produces
+# broken/text output. We were violating most of them and getting English text
+# back instead of audio codec tokens. In particular, repetition_penalty=1.1
+# triggers the RepetitionPenaltyLogitsProcessorPatch outetts monkey-patches
+# into transformers (window of last 64 tokens only).
+temperature: 0.4
+top_p: 0.9
+top_k: 40
+repetition_penalty: 1.1
+# min_p: 0.05  # uncomment if your TRL version supports it in GRPOConfig
 
 # vLLM for fast sampling — Phase 1 confirmed compatibility.
 # Set to false to fall back to plain transformers.generate (slower, simpler debugging).
