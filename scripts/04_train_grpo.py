@@ -269,6 +269,15 @@ def main() -> int:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Null out the chat_template so TRL doesn't wrap our already-formatted
+    # OuteTTS prompts in <|im_start|>user...<|im_end|> structure. Our prompts
+    # are pre-built by outetts.prompt_processor and need to reach the model
+    # verbatim; without this, TRL applies the Llama chat template and the model
+    # responds with English text instead of continuing audio tokens.
+    if tokenizer.chat_template is not None:
+        logger.info("clearing tokenizer.chat_template to prevent TRL from re-wrapping prompts")
+        tokenizer.chat_template = None
+
     logger.info("loading base Llama weights: %s", cfg["model_id"])
     model = AutoModelForCausalLM.from_pretrained(
         cfg["model_id"],
