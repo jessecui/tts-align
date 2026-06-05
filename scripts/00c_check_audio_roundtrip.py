@@ -95,33 +95,33 @@ def main() -> int:
         return 1
 
     # ----- 6. decode codes -> waveform -----
-    # Try a few entry points. iface.get_audio is mentioned in dir(iface); audio_codec.decode is the lower-level path.
     print(f"\n[6] decoding codes back to waveform...")
 
-    # iface.get_audio
+    # extract_audio_from_tokens returns list[list[int]] (one inner list per DAC codebook).
+    # The codec expects an int64 tensor shaped (B=1, n_codebooks=2, T) on the codec's device.
+    codes_t = torch.tensor(codes, dtype=torch.long).unsqueeze(0).to(iface.audio_codec.device)
+    print(f"    codes tensor shape: {tuple(codes_t.shape)}, dtype: {codes_t.dtype}, device: {codes_t.device}")
+
+    decoded_audio = None
+    # Prefer the low-level codec.decode — it's what produced the codes via encode in Phase 2.
     try:
-        get_audio_sig = inspect.signature(iface.get_audio)
-        print(f"    iface.get_audio signature: {get_audio_sig}")
-        wav = iface.get_audio(codes)
-        if hasattr(wav, 'shape'):
-            print(f"    iface.get_audio -> shape {tuple(wav.shape)}, dtype {wav.dtype}")
+        decoded_audio = iface.audio_codec.decode(codes_t)
+        if hasattr(decoded_audio, 'shape'):
+            print(f"    audio_codec.decode -> shape {tuple(decoded_audio.shape)}, dtype {decoded_audio.dtype}")
+        elif hasattr(decoded_audio, 'audio'):
+            print(f"    audio_codec.decode -> object with .audio shape {tuple(decoded_audio.audio.shape)}")
         else:
-            print(f"    iface.get_audio -> type {type(wav).__name__}: {repr(wav)[:200]}")
-        # If wav has a .audio attribute or similar, peek
-        if hasattr(wav, 'audio'):
-            inner = wav.audio
-            print(f"    .audio shape: {tuple(inner.shape) if hasattr(inner, 'shape') else 'n/a'}")
-        decoded_audio = wav
+            print(f"    audio_codec.decode -> type {type(decoded_audio).__name__}: {repr(decoded_audio)[:200]}")
     except Exception as e:
-        print(f"    iface.get_audio FAILED: {type(e).__name__}: {e}")
-        # Fall back to audio_codec.decode directly
+        print(f"    audio_codec.decode FAILED: {type(e).__name__}: {e}")
+        # Fall back: try iface.get_audio with the tensor (may still object).
         try:
-            print(f"    falling back to iface.audio_codec.decode(codes)")
-            decoded_audio = iface.audio_codec.decode(codes)
+            print(f"    falling back to iface.get_audio(codes_t)")
+            decoded_audio = iface.get_audio(codes_t)
             if hasattr(decoded_audio, 'shape'):
-                print(f"    -> shape {tuple(decoded_audio.shape)}, dtype {decoded_audio.dtype}")
+                print(f"    iface.get_audio -> shape {tuple(decoded_audio.shape)}, dtype {decoded_audio.dtype}")
         except Exception as e2:
-            print(f"    audio_codec.decode also FAILED: {type(e2).__name__}: {e2}")
+            print(f"    iface.get_audio also FAILED: {type(e2).__name__}: {e2}")
             return 2
 
     # ----- 7. save reconstructed audio -----
