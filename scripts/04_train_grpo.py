@@ -95,14 +95,21 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
         except Exception as e:
             logger.warning("extract_audio_from_tokens failed: %s", e)
             return None
+        # `codes` comes back as list[list[int]] (one inner list per DAC codebook).
+        # audio_codec.decode wants an int64 tensor of shape (B=1, n_codebooks=2, T)
+        # on the codec's device. Same conversion we use in the round-trip diagnostic.
+        if not codes or not codes[0]:
+            return None
         try:
-            audio = iface.get_audio(codes)
-        except Exception:
-            try:
-                audio = iface.audio_codec.decode(codes)
-            except Exception as e:
-                logger.warning("DAC decode failed: %s", e)
-                return None
+            codes_t = torch.tensor(codes, dtype=torch.long).unsqueeze(0).to(iface.audio_codec.device)
+        except Exception as e:
+            logger.warning("codes tensor build failed: %s", e)
+            return None
+        try:
+            audio = iface.audio_codec.decode(codes_t)
+        except Exception as e:
+            logger.warning("DAC decode failed: %s", e)
+            return None
         # Normalize to (T,) float32 numpy on CPU
         if hasattr(audio, "audio"):
             audio = audio.audio
@@ -112,7 +119,7 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
         if arr.ndim > 1:
             arr = arr.mean(axis=0) if arr.shape[0] < arr.shape[-1] else arr.mean(axis=-1)
         arr = arr.astype(np.float32)
-        if arr.size < 16_000 * 0.2:   # less than 0.2s of audio -> garbage
+        if arr.size < target_sr * 0.2:   # less than 0.2s of audio -> garbage
             return None
         return arr, target_sr
 
