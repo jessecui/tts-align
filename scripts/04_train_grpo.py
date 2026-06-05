@@ -132,12 +132,30 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
         verbose = call_count["n"] <= 3 or call_count["n"] % 25 == 0
 
         # TRL decodes completions with skip_special_tokens=True, which strips
-        # every <|word_start|>, <|c1_N|>, <|c2_N|>, etc. — exactly the tokens
-        # we need to recover audio codes. Use the raw completion_ids kwarg
-        # when TRL provides them.
-        completion_ids_list = kwargs.get("completion_ids") or kwargs.get("completions_ids")
+        # every <|word_start|>, <|c1_N|>, <|c2_N|> — exactly the tokens we need
+        # to recover audio codes. We have to use the raw token IDs from kwargs.
+        # Different TRL versions name this kwarg differently; check several.
+        if verbose and call_count["n"] == 1:
+            logger.info("[reward debug] reward_func kwargs keys: %s", list(kwargs.keys()))
+            for k, v in kwargs.items():
+                if hasattr(v, '__len__'):
+                    sample = v[0] if len(v) > 0 else None
+                    sample_repr = type(sample).__name__
+                    if hasattr(sample, '__len__'):
+                        sample_repr += f"(len={len(sample)})"
+                    elif sample is not None:
+                        sample_repr += f"={sample!r}"[:60]
+                    logger.info("[reward debug]   kwargs[%r]: type=%s len=%d sample=%s",
+                                k, type(v).__name__, len(v), sample_repr)
+
+        completion_ids_list = (
+            kwargs.get("completion_ids")
+            or kwargs.get("completions_ids")
+            or kwargs.get("response_ids")
+            or kwargs.get("responses")
+        )
         if verbose and completion_ids_list is None:
-            logger.warning("[reward debug] no completion_ids in kwargs; falling back to re-encoded text (will likely fail)")
+            logger.warning("[reward debug] no completion_ids found in kwargs; cannot recover audio tokens")
 
         rewards: list[float] = []
         n_empty_codes = n_short_audio = n_decode_err = n_score_err = n_ok = 0
