@@ -10,7 +10,7 @@ Label assignment:
     - Bottom `1 - undesirable_quantile` fraction (e.g. bottom 33%) → undesirable.
     - Middle is dropped.
     The thresholds come from the dataset's own distribution, so they adapt
-    to whatever this particular Phase 2a run scored.
+    to whatever distribution the scoring pass produced.
 
 Smoke test (`--smoke-test`):
     10 labeled examples, batch size 2, 5 steps. Verifies the pipeline end-to-end.

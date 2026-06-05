@@ -1,25 +1,26 @@
-"""Phase 1 vLLM compatibility check for OuteTTS 1.0.
+"""vLLM compatibility check for OuteTTS 1.0.
 
-Per project plan: we want to know *now* whether vLLM-accelerated sampling works
-for OuteTTS, because if it doesn't, the GRPO wall-clock budget changes.
+Confirms vLLM-accelerated sampling works for OuteTTS — if the current TRL/vLLM
+wiring breaks for the GRPO trainer (it did during this project, hence the
+default `use_vllm: false` in config/grpo.yaml), you can still run vLLM
+standalone for sampling experiments.
 
 What this script does:
     1. Imports vllm and instantiates an LLM around the OuteTTS-1.0-1B weights.
     2. Runs a tiny generation against a single dummy prompt token sequence.
     3. Reports load time, single-sample latency, and a 4-way batched latency
-       (since GRPO batches 4 generations per group).
+       (matching GRPO's K=4 rollout group size).
 
 What this script does NOT do:
     - Decode audio. We're just measuring whether the LM-level token generation
       works under vLLM. The DAC decoder runs separately.
-    - Compare against HF generation. That's an optional Phase 4 measurement.
 
 Run on the rented box:
     pip install -e '.[vllm]'   # or uv add vllm==0.6.4.post1
-    python scripts/00b_check_vllm_compat.py
+    ./run.sh vllm-check
 
 If vLLM fails to load the model, the script prints the failure clearly and
-exits nonzero — the GRPO plan falls back to plain transformers generation.
+exits nonzero — GRPO falls back to plain transformers generation.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ import time
 from pathlib import Path
 
 # Make src importable when running as a script from the repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("vllm-check")

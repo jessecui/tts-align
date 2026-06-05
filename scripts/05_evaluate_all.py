@@ -1,4 +1,4 @@
-"""Phase 5: held-out comparison eval across {base, DPO, KTO}.
+"""Held-out comparison eval across {base, DPO, KTO, GRPO}.
 
 Pipeline:
     1. Load the held-out eval prompts (split=='eval' in dataset.parquet).
@@ -238,7 +238,10 @@ def main() -> int:
                         default=Path("data/generated/reference_speaker.wav"))
     parser.add_argument("--base-model", default="OuteAI/Llama-OuteTTS-1.0-1B")
     parser.add_argument("--temperature", type=float, default=0.7,
-                        help="sampling temp for eval generation; lower=conservative")
+                        help="sampling temp for eval generation. Default 0.7 — higher than "
+                             "OuteTTS's canonical 0.4 to give a more realistic eval that surfaces "
+                             "the variance methods deal with at inference. Lower for a quality-only "
+                             "comparison.")
     parser.add_argument("--wer-failure-threshold", type=float, default=0.30)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None,

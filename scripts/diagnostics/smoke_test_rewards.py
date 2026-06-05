@@ -1,13 +1,14 @@
-"""Phase 1 smoke test for the reward pipeline.
+"""Smoke test for the reward pipeline.
 
 Generates a handful of audio samples with the base OuteTTS model, scores each
 one, prints per-sample results, and prints min/max/mean per metric across the
-batch. This is the gate that has to pass before we generate the full dataset.
+batch. Useful before generating the full dataset to confirm the reward stack
+is wired up correctly.
 
 Run on the rented box:
-    python scripts/00_smoke_test_rewards.py
-    python scripts/00_smoke_test_rewards.py --voice-cloning  # also test speaker_sim
-    python scripts/00_smoke_test_rewards.py --skip-generation --audio-dir <path>
+    ./run.sh smoke
+    ./run.sh smoke --voice-cloning           # also test speaker_sim
+    ./run.sh smoke --skip-generation --audio-dir <path>
 
 What we're sanity-checking:
     - The base model installs and runs.
@@ -34,7 +35,7 @@ import soundfile as sf
 import torch
 
 # Make src importable when running as a script from the repo root.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.rewards import RewardConfig, CompositeWeights, score  # noqa: E402
 
@@ -88,8 +89,7 @@ def synthesize_outetts(prompts: list[str], out_dir: Path, voice_cloning: bool) -
         # ways across releases (speaker.audio / speaker.wav / speaker["audio"]).
         # Rather than reach in, we synthesize one short reference clip with this
         # speaker reading a fixed sentence, and reuse it as the speaker_sim
-        # anchor. This is a circular hack only for the smoke test — Phase 2 will
-        # use real reference clips from LibriTTS.
+        # anchor. Smoke test only — circular but fine for verifying the metric runs.
         ref_path = out_dir / "reference_speaker.wav"
         if not ref_path.exists():
             logger.info("synthesizing reference speaker clip -> %s", ref_path)

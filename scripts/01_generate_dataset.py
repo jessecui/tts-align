@@ -9,9 +9,10 @@ Pipeline per prompt:
 Resumable: re-running the script picks up where it left off based on what's
 already in the parquet.
 
-Default scale:
-    100 easy + 50 hard prompts, 4 candidates each at temps [0.7, 0.9, 1.0, 1.2],
-    30 of those held out as eval. Roughly 2-3 hours on an A100 40GB.
+Defaults (override via `--n-easy`, `--n-hard`, `--n-eval`):
+    up to 100 easy + 50 hard prompts (capped by what's in the bundled prompt files),
+    4 candidates each at temps [0.7, 0.9, 1.0, 1.2], 30 held out as eval.
+    Roughly 2-3 hours on an A100 40GB at default scale.
 """
 from __future__ import annotations
 

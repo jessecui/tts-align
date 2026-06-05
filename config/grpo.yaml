@@ -61,8 +61,11 @@ top_k: 40
 repetition_penalty: 1.1
 # min_p: 0.05  # uncomment if your TRL version supports it in GRPOConfig
 
-# vLLM for fast sampling — Phase 1 confirmed compatibility.
-# Set to false to fall back to plain transformers.generate (slower, simpler debugging).
+# vLLM for fast sampling.
+# Default off because TRL 0.16+'s GRPOTrainer expects an external vLLM server
+# (`trl vllm-serve`), not the in-process vLLM the project originally targeted.
+# Plain transformers.generate works and is what was used for the published run.
+# See `./run.sh vllm-check` if you want to confirm vLLM is available standalone.
 use_vllm: false
 vllm_gpu_memory_utilization: 0.4   # leave ~24 GB for the training model + reward stack
 

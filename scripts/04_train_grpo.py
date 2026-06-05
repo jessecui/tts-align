@@ -308,7 +308,7 @@ def main() -> int:
                     tokenizer.chat_template[:60])
         tokenizer.chat_template = None
 
-    # Also disable BOS / EOS auto-insertion (matches bare-generate diagnostic
+    # Also disable BOS / EOS auto-insertion (matches the standalone diagnostic
     # which used add_special_tokens=False).
     for attr in ("add_bos_token", "add_eos_token"):
         if getattr(tokenizer, attr, None):

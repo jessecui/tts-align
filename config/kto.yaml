@@ -9,6 +9,8 @@ model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
 dataset_path: "data/dataset.parquet"
 
 # LoRA — identical to DPO so the two are directly comparable.
+# KTO doesn't sample at training time either, so lora_dropout=0.05 is safe.
+# (GRPO sets dropout to 0.0 — see config/grpo.yaml.)
 lora:
   r: 16
   alpha: 32

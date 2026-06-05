@@ -1,9 +1,10 @@
 """Composite reward function.
 
 This is the single entrypoint used by:
-    - Offline dataset scoring (Phase 2): score each candidate, store in parquet.
-    - Online GRPO reward computation (Phase 4): wrapped to take token ids and
-      a reference DAC decoder, then forward through this same function.
+    - Offline dataset scoring (`scripts/01_generate_dataset.py`): score each candidate, store in parquet.
+    - Online GRPO reward (`scripts/04_train_grpo.py`): wrapped in a callable
+      that takes a generated token sequence, decodes via the DAC codec, then
+      calls this function on the resulting waveform.
 
 Composite formula (default weights, configurable via constructor):
     composite = w_wer  * (1 - clamp(wer, 0, 1))

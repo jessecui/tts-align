@@ -33,15 +33,9 @@ def build_dpo_pairs(
     """For each prompt, cross-pair top-K candidates with bottom-K candidates.
 
     With K=2 and 4 candidates per prompt, this yields top-2 x bottom-2 = 4 pairs
-    per prompt (212 pairs from 53 train prompts in this project's dataset).
-    Parallels KTO's quantile logic (top-half preferred over bottom-half) and
-    gives DPO comparable training data quantity to KTO so a DPO-vs-KTO
-    comparison is apples-to-apples on data quantity.
-
-    Earlier versions of this function only paired the single best vs the single
-    worst per prompt (1 pair/prompt = 53 pairs). That was data-starved relative
-    to KTO and made the loss-vs-data-quantity attribution ambiguous in the
-    eval comparison. Top-K vs bottom-K resolves that.
+    per prompt. Parallels KTO's quantile logic (top-half preferred over
+    bottom-half) so a DPO-vs-KTO comparison is apples-to-apples on data
+    quantity, not just loss function.
 
     Returns columns:
         prompt_id, prompt, chosen_audio_path, rejected_audio_path,

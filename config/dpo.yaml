@@ -6,10 +6,13 @@
 seed: 42
 model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
 
-# Where to read the scored preference dataset from (Phase 2a output).
+# Where to read the scored preference dataset from (output of scripts/01_generate_dataset.py).
 dataset_path: "data/dataset.parquet"
 
-# LoRA — exactly what the project plan specified.
+# LoRA — rank 16 / alpha 32 / attention + MLP projections.
+# DPO doesn't sample at training time, so lora_dropout=0.05 is safe here.
+# (GRPO sets dropout to 0.0 because TRL keeps the model in train() mode
+# during rollout sampling — see config/grpo.yaml.)
 lora:
   r: 16
   alpha: 32
