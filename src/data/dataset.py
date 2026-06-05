@@ -23,14 +23,25 @@ def load_scored_dataset(parquet_path: Path) -> pd.DataFrame:
     return df
 
 
-def build_dpo_pairs(df: pd.DataFrame, split: str = "train", drop_ties: bool = True) -> pd.DataFrame:
-    """For each prompt, pair the highest-composite candidate (chosen) with the lowest (rejected).
+def build_dpo_pairs(
+    df: pd.DataFrame,
+    split: str = "train",
+    top_k: int = 2,
+    bottom_k: int = 2,
+    drop_ties: bool = True,
+) -> pd.DataFrame:
+    """For each prompt, cross-pair top-K candidates with bottom-K candidates.
 
-    Args:
-        df: scored dataset (output of `load_scored_dataset`).
-        split: which split column value to keep.
-        drop_ties: if True, skip prompts where chosen and rejected have identical
-            composite (no preference signal).
+    With K=2 and 4 candidates per prompt, this yields top-2 x bottom-2 = 4 pairs
+    per prompt (212 pairs from 53 train prompts in this project's dataset).
+    Parallels KTO's quantile logic (top-half preferred over bottom-half) and
+    gives DPO comparable training data quantity to KTO so a DPO-vs-KTO
+    comparison is apples-to-apples on data quantity.
+
+    Earlier versions of this function only paired the single best vs the single
+    worst per prompt (1 pair/prompt = 53 pairs). That was data-starved relative
+    to KTO and made the loss-vs-data-quantity attribution ambiguous in the
+    eval comparison. Top-K vs bottom-K resolves that.
 
     Returns columns:
         prompt_id, prompt, chosen_audio_path, rejected_audio_path,
@@ -39,23 +50,26 @@ def build_dpo_pairs(df: pd.DataFrame, split: str = "train", drop_ties: bool = Tr
     df = df[df["split"] == split]
     pairs = []
     for prompt_id, group in df.groupby("prompt_id"):
-        if len(group) < 2:
+        if len(group) < top_k + bottom_k:
             continue
         srt = group.sort_values("composite", ascending=False)
-        chosen, rejected = srt.iloc[0], srt.iloc[-1]
-        if drop_ties and chosen["composite"] == rejected["composite"]:
-            continue
-        pairs.append(
-            {
-                "prompt_id": prompt_id,
-                "prompt": chosen["prompt"],
-                "chosen_audio_path": chosen["audio_path"],
-                "rejected_audio_path": rejected["audio_path"],
-                "chosen_composite": float(chosen["composite"]),
-                "rejected_composite": float(rejected["composite"]),
-                "margin": float(chosen["composite"] - rejected["composite"]),
-            }
-        )
+        top = srt.iloc[:top_k]
+        bottom = srt.iloc[-bottom_k:]
+        for _, chosen in top.iterrows():
+            for _, rejected in bottom.iterrows():
+                if drop_ties and chosen["composite"] == rejected["composite"]:
+                    continue
+                pairs.append(
+                    {
+                        "prompt_id": prompt_id,
+                        "prompt": chosen["prompt"],
+                        "chosen_audio_path": chosen["audio_path"],
+                        "rejected_audio_path": rejected["audio_path"],
+                        "chosen_composite": float(chosen["composite"]),
+                        "rejected_composite": float(rejected["composite"]),
+                        "margin": float(chosen["composite"] - rejected["composite"]),
+                    }
+                )
     return pd.DataFrame(pairs)
 
 
