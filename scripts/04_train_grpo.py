@@ -308,17 +308,28 @@ def main() -> int:
                     tokenizer.chat_template[:60])
         tokenizer.chat_template = None
 
-    # Also disable BOS / EOS auto-insertion. Llama tokenizers default to
-    # prepending <|begin_of_text|>, but our prompts already begin with
-    # <|im_start|> followed by the OuteTTS audio-prefix structure. A leading
-    # BOS makes the model treat the prompt as "start fresh" and emit plain
-    # text instead of continuing the audio sequence. The bare-generate
-    # diagnostic worked precisely because it called tokenizer(...,
-    # add_special_tokens=False); replicate that here.
+    # Also disable BOS / EOS auto-insertion (matches bare-generate diagnostic
+    # which used add_special_tokens=False).
     for attr in ("add_bos_token", "add_eos_token"):
         if getattr(tokenizer, attr, None):
             logger.info("setting tokenizer.%s = False", attr)
             setattr(tokenizer, attr, False)
+
+    # Force tokenizer.batch_decode to preserve special tokens. TRL's GRPO
+    # version on this box passes no kwargs to reward_funcs (only prompts +
+    # completions), so the raw generated token IDs aren't directly available.
+    # By making batch_decode preserve special tokens, the `completion` strings
+    # TRL hands us still contain <|word_start|>, <|c1_N|>, <|c2_N|>, etc., which
+    # we can re-encode in the reward function to recover the original IDs.
+    _orig_batch_decode = tokenizer.batch_decode
+
+    def _batch_decode_no_skip(*args, **kwargs):
+        kwargs["skip_special_tokens"] = False
+        return _orig_batch_decode(*args, **kwargs)
+
+    tokenizer.batch_decode = _batch_decode_no_skip
+    logger.info("monkey-patched tokenizer.batch_decode to preserve special tokens "
+                "(needed to recover audio-token IDs in the reward function)")
 
     logger.info("loading base Llama weights: %s", cfg["model_id"])
     model = AutoModelForCausalLM.from_pretrained(
