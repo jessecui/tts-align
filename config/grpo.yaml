@@ -58,7 +58,7 @@ repetition_penalty: 1.1
 
 # vLLM for fast sampling — Phase 1 confirmed compatibility.
 # Set to false to fall back to plain transformers.generate (slower, simpler debugging).
-use_vllm: true
+use_vllm: false
 vllm_gpu_memory_utilization: 0.4   # leave ~24 GB for the training model + reward stack
 
 # Logging & checkpointing
