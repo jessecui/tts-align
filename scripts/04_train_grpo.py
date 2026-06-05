@@ -123,33 +123,92 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
             return None
         return arr, target_sr
 
+    # Diagnostic counter — every Nth reward batch we log details of the first
+    # completion so we can see whether the model is producing parseable audio tokens.
+    call_count = {"n": 0}
+
     def reward_func(prompts: list[str], completions: list[str], **kwargs) -> list[float]:
+        call_count["n"] += 1
+        verbose = call_count["n"] <= 3 or call_count["n"] % 25 == 0
+
         rewards: list[float] = []
-        for prompt, completion in zip(prompts, completions):
+        n_empty_codes = n_short_audio = n_decode_err = n_score_err = n_ok = 0
+        for i, (prompt, completion) in enumerate(zip(prompts, completions)):
             try:
                 target_text = extract_text_from_prompt(prompt)
             except Exception as e:
                 logger.warning("bad prompt: %s", e)
                 rewards.append(0.0)
                 continue
-            decoded = _decode_to_audio(completion)
-            if decoded is None:
+
+            # ---- decode (inline so we can introspect each step) ----
+            ids = tokenizer.encode(completion, add_special_tokens=False)
+            try:
+                codes = iface.prompt_processor.extract_audio_from_tokens(ids)
+            except Exception as e:
+                if verbose and i == 0:
+                    logger.warning("[reward debug] extract_audio_from_tokens raised: %s", e)
+                n_decode_err += 1
                 rewards.append(0.0)
                 continue
-            audio_arr, sr = decoded
+
+            n_code_frames = len(codes[0]) if codes and codes[0] else 0
+            if n_code_frames == 0:
+                if verbose and i == 0:
+                    snippet = completion[:300].replace("\n", " ")
+                    logger.warning("[reward debug] empty codes. completion[:300]=%r", snippet)
+                n_empty_codes += 1
+                rewards.append(0.0)
+                continue
+
+            try:
+                codes_t = torch.tensor(codes, dtype=torch.long).unsqueeze(0).to(iface.audio_codec.device)
+                audio = iface.audio_codec.decode(codes_t)
+            except Exception as e:
+                if verbose and i == 0:
+                    logger.warning("[reward debug] decode raised: %s", e)
+                n_decode_err += 1
+                rewards.append(0.0)
+                continue
+
+            if hasattr(audio, "audio"):
+                audio = audio.audio
+            if hasattr(audio, "cpu"):
+                audio = audio.cpu().numpy()
+            arr = np.asarray(audio).squeeze()
+            if arr.ndim > 1:
+                arr = arr.mean(axis=0) if arr.shape[0] < arr.shape[-1] else arr.mean(axis=-1)
+            arr = arr.astype(np.float32)
+            if arr.size < target_sr * 0.2:
+                n_short_audio += 1
+                rewards.append(0.0)
+                continue
+
             try:
                 scores = score(
-                    audio=audio_arr,
+                    audio=arr,
                     target_text=target_text,
-                    sample_rate=sr,
+                    sample_rate=target_sr,
                     reference_audio=ref_audio,
                     reference_sr=ref_sr,
                     config=reward_cfg,
                 )
                 rewards.append(float(scores["composite"]))
+                n_ok += 1
+                if verbose and i == 0:
+                    logger.info("[reward debug] OK. n_code_frames=%d, audio_len=%d (%.2fs), wer=%.3f utmos=%.2f composite=%.3f",
+                                n_code_frames, arr.size, arr.size / target_sr,
+                                scores["wer"], scores["utmos"], scores["composite"])
             except Exception as e:
-                logger.warning("scoring failed: %s", e)
+                if verbose and i == 0:
+                    logger.warning("[reward debug] scoring raised: %s", e)
+                n_score_err += 1
                 rewards.append(0.0)
+
+        if verbose:
+            logger.info("[reward batch %d] ok=%d empty_codes=%d short_audio=%d decode_err=%d score_err=%d | total=%d mean=%.3f",
+                        call_count["n"], n_ok, n_empty_codes, n_short_audio, n_decode_err, n_score_err,
+                        len(rewards), sum(rewards) / max(1, len(rewards)))
         return rewards
 
     return reward_func
