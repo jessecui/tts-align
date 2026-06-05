@@ -10,11 +10,16 @@ model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
 dataset_path: "data/dataset.parquet"
 reference_audio_path: "data/generated/reference_speaker.wav"
 
-# LoRA — same as DPO/KTO for an apples-to-apples LoRA budget across methods.
+# LoRA. Rank/alpha/targets match DPO/KTO for an apples-to-apples LoRA budget.
+# Dropout is set to 0 here (vs 0.05 in DPO/KTO) because TRL keeps the model in
+# train() mode during GRPO's rollout sampling, so any nonzero lora_dropout fires
+# during generation and adds noise to the audio Whisper transcribes. Our offline
+# diagnostic of the same prompt+sampling scored composite 0.897; TRL's training
+# rewards came in at ~0.57. Dropout-during-rollout is the prime suspect.
 lora:
   r: 16
   alpha: 32
-  dropout: 0.05
+  dropout: 0.0
   target_modules:
     - q_proj
     - k_proj
