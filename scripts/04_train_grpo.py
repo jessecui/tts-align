@@ -131,6 +131,14 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
         call_count["n"] += 1
         verbose = call_count["n"] <= 3 or call_count["n"] % 25 == 0
 
+        # TRL decodes completions with skip_special_tokens=True, which strips
+        # every <|word_start|>, <|c1_N|>, <|c2_N|>, etc. — exactly the tokens
+        # we need to recover audio codes. Use the raw completion_ids kwarg
+        # when TRL provides them.
+        completion_ids_list = kwargs.get("completion_ids") or kwargs.get("completions_ids")
+        if verbose and completion_ids_list is None:
+            logger.warning("[reward debug] no completion_ids in kwargs; falling back to re-encoded text (will likely fail)")
+
         rewards: list[float] = []
         n_empty_codes = n_short_audio = n_decode_err = n_score_err = n_ok = 0
         for i, (prompt, completion) in enumerate(zip(prompts, completions)):
@@ -142,7 +150,10 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
                 continue
 
             # ---- decode (inline so we can introspect each step) ----
-            ids = tokenizer.encode(completion, add_special_tokens=False)
+            if completion_ids_list is not None and i < len(completion_ids_list):
+                ids = list(completion_ids_list[i]) if not isinstance(completion_ids_list[i], list) else completion_ids_list[i]
+            else:
+                ids = tokenizer.encode(completion, add_special_tokens=False)
             try:
                 codes = iface.prompt_processor.extract_audio_from_tokens(ids)
             except Exception as e:
@@ -156,7 +167,9 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
             if n_code_frames == 0:
                 if verbose and i == 0:
                     snippet = completion[:300].replace("\n", " ")
-                    logger.warning("[reward debug] empty codes. completion[:300]=%r", snippet)
+                    n_ids = len(ids)
+                    logger.warning("[reward debug] empty codes. ids_len=%d first_20_ids=%s completion_decoded[:300]=%r",
+                                   n_ids, ids[:20], snippet)
                 n_empty_codes += 1
                 rewards.append(0.0)
                 continue
