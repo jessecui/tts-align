@@ -245,7 +245,9 @@ def main() -> int:
         num_generations=2 if args.smoke_test else cfg["num_generations"],
         num_iterations=cfg["num_iterations"],
         max_steps=5 if args.smoke_test else cfg["max_steps"],
-        per_device_train_batch_size=1 if args.smoke_test else cfg["batch_size"],
+        # GRPO requires effective batch >= num_generations AND evenly divisible by it.
+        # Smoke test: batch=2, accum=1, num_gen=2 -> effective 2, valid.
+        per_device_train_batch_size=2 if args.smoke_test else cfg["batch_size"],
         gradient_accumulation_steps=1 if args.smoke_test else cfg["grad_accum"],
         learning_rate=cfg["learning_rate"],
         warmup_ratio=cfg["warmup_ratio"],
