@@ -1,4 +1,4 @@
-# TTSAlign: Preference Optimization (DPO, KTO, GRPO) for Autoregressive Text-to-Speech
+# TTSAlign: Reinforcement Fine-Tuning and Preference Optimization (DPO, KTO, GRPO) for Autoregressive Text-to-Speech
 
 Two offline preference-optimization methods (DPO, KTO) and one online RL fine-tuning method (GRPO), applied to [OuteAI/Llama-OuteTTS-1.0-1B](https://huggingface.co/OuteAI/Llama-OuteTTS-1.0-1B) and evaluated on 30 held-out prompts against the base model. Reward is a deterministic WER + UTMOS + ECAPA-speaker-similarity composite.
 
