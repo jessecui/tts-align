@@ -60,8 +60,12 @@ def _patch_whisper_load_model_cache() -> None:
 _patch_whisper_load_model_cache()
 
 
-# Regex to pull the target text back out of an OuteTTS inference prompt.
-# get_completion_prompt(text) produces "<|im_start|>\n<|text_start|>{text}<|text_end|>\n<|audio_start|>\n".
+# Best-effort regex used only as a fallback. The PRIMARY way to get the target
+# text is the prompt_to_target dict built in main() — see the long comment there.
+# DO NOT use this on a speaker-bearing prompt without verifying the dict path
+# also missed: with a speaker, OuteTTS concatenates {speaker_transcript}{target}
+# into a single <|text_start|>...<|text_end|> span, so this regex returns the
+# WRONG (too-long) text and silently corrupts WER.
 _TEXT_FROM_PROMPT_RE = re.compile(r"<\|text_start\|>(.*?)<\|text_end\|>", re.DOTALL)
 
 
@@ -72,18 +76,29 @@ def extract_text_from_prompt(prompt_str: str) -> str:
     return m.group(1).strip()
 
 
-def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int | None, reward_cfg: RewardConfig):
+def make_reward_fn(
+    iface,
+    tokenizer,
+    ref_audio: np.ndarray | None,
+    ref_sr: int | None,
+    reward_cfg: RewardConfig,
+    prompt_to_target: dict[str, str],
+):
     """Build a TRL-compatible reward callable.
 
     TRL signature: `reward_func(prompts: list[str], completions: list[str], **kwargs) -> list[float]`.
     `prompts` are the dataset prompts; `completions` are what the policy generated.
     Both are decoded text strings, not token IDs.
 
-    For each completion we:
-        1. Tokenize back to integer IDs.
-        2. Use OuteTTS to extract audio codes from the token stream.
-        3. DAC-decode codes -> waveform.
-        4. Run our composite reward.
+    For each completion the flow is:
+        1. Look up the target text via `prompt_to_target[prompt]` (built in main()).
+           Direct dict lookup is the ONLY correct way — the regex fallback grabs
+           the speaker reference transcript plus the target concatenated, which
+           silently corrupts WER.
+        2. Tokenize the completion back to integer IDs.
+        3. Use OuteTTS to extract audio codes from the token stream.
+        4. DAC-decode codes -> waveform.
+        5. Run the composite reward.
     Catastrophic failures (un-decodable sequences, empty audio, etc.) score 0.
     """
     target_sr = int(getattr(iface.audio_codec, "sr", 24000))
@@ -124,11 +139,21 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
 
         rewards: list[float] = []
         n_empty_codes = n_short_audio = n_decode_err = n_score_err = n_ok = 0
+        n_target_miss = 0
         for i, (prompt, completion) in enumerate(zip(prompts, completions)):
-            try:
-                target_text = extract_text_from_prompt(prompt)
-            except Exception as e:
-                logger.warning("bad prompt: %s", e)
+            # Look up target via the prompt_to_target dict built in main().
+            # NEVER fall back to extract_text_from_prompt for speaker-bearing
+            # prompts — that returns {speaker_transcript}{target} concatenated
+            # and silently corrupts the WER signal.
+            target_text = prompt_to_target.get(prompt)
+            if target_text is None:
+                # Dict miss shouldn't happen — prompts come from the dataset
+                # we built the dict from. If it does, score 0 (no signal)
+                # rather than risk a corrupted reward.
+                n_target_miss += 1
+                if verbose and i == 0:
+                    logger.warning("[reward debug] prompt not found in prompt_to_target dict; scoring 0. "
+                                   "prompt[:160]=%r", prompt[:160])
                 rewards.append(0.0)
                 continue
 
@@ -209,8 +234,8 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
                 rewards.append(0.0)
 
         if verbose:
-            logger.info("[reward batch %d] ok=%d empty_codes=%d short_audio=%d decode_err=%d score_err=%d | total=%d mean=%.3f",
-                        call_count["n"], n_ok, n_empty_codes, n_short_audio, n_decode_err, n_score_err,
+            logger.info("[reward batch %d] ok=%d empty_codes=%d short_audio=%d decode_err=%d score_err=%d target_miss=%d | total=%d mean=%.3f",
+                        call_count["n"], n_ok, n_empty_codes, n_short_audio, n_decode_err, n_score_err, n_target_miss,
                         len(rewards), sum(rewards) / max(1, len(rewards)))
         return rewards
 
@@ -251,26 +276,32 @@ def main() -> int:
     speaker = iface.load_default_speaker("EN-FEMALE-1-NEUTRAL")
     logger.info("using default speaker EN-FEMALE-1-NEUTRAL for all generation prompts")
 
-    # Sanity-check the regex used to recover the target text from a speaker-
-    # bearing prompt. With a speaker reference, OuteTTS may embed the speaker's
-    # transcript inside its own <|text_start|>...<|text_end|> span. If that
-    # appears BEFORE the target span the non-greedy regex would grab the wrong
-    # text and corrupt every WER score for training. Fail loudly here rather
-    # than silently train on a bad signal.
+    # Probe the prompt structure once so we know what to expect. OuteTTS
+    # embeds the speaker reference transcript inside the SAME <|text_start|>
+    # ... <|text_end|> span as the target text — earlier versions of this
+    # script tried to recover the target text with a regex on that span,
+    # which silently returned {speaker_transcript}{target} concatenated and
+    # corrupted every WER score. The fix is to track target_text alongside
+    # the formatted prompt in `prompt_to_target` (built below) and look it
+    # up directly in the reward function. The regex stays as fallback only.
     _probe_text = "the quick brown fox jumps over the lazy dog"
     _probe_prompt = iface.prompt_processor.get_completion_prompt(_probe_text, speaker=speaker)
-    _recovered = extract_text_from_prompt(_probe_prompt)
-    if _recovered != _probe_text:
-        raise RuntimeError(
-            f"extract_text_from_prompt regex does NOT round-trip on speaker-bearing prompts. "
-            f"Expected {_probe_text!r}, got {_recovered!r}. WER signal would be corrupted; aborting."
-        )
-    logger.info("regex round-trip OK: extract_text_from_prompt recovers target text from speaker-bearing prompt")
+    _probe_recovered = extract_text_from_prompt(_probe_prompt)
+    if _probe_recovered != _probe_text:
+        logger.info("regex extract_text_from_prompt returns concatenated speaker+target text "
+                    "(expected: %r, got %r). prompt_to_target dict lookup is required and will be used.",
+                    _probe_text, _probe_recovered[:160])
+    else:
+        logger.info("regex extract_text_from_prompt round-trips cleanly on this OuteTTS version; "
+                    "dict lookup still used as the primary path")
 
     prompts: list[dict] = []
+    prompt_to_target: dict[str, str] = {}
     for _, row in train_df.iterrows():
         prompt_str = iface.prompt_processor.get_completion_prompt(row["prompt"], speaker=speaker)
         prompts.append({"prompt": prompt_str})
+        prompt_to_target[prompt_str] = row["prompt"]
+    logger.info("built prompt_to_target dict: %d unique formatted-prompt -> target-text entries", len(prompt_to_target))
 
     if args.smoke_test:
         prompts = prompts[:5]
@@ -345,7 +376,7 @@ def main() -> int:
         speaker_sim=cfg["reward_weights"]["speaker_sim"] if ref_audio is not None else 0.0,
     ))
 
-    reward_func = make_reward_fn(iface, tokenizer, ref_audio, ref_sr, reward_cfg)
+    reward_func = make_reward_fn(iface, tokenizer, ref_audio, ref_sr, reward_cfg, prompt_to_target)
 
     # ----- LoRA -----
     from peft import get_peft_model
