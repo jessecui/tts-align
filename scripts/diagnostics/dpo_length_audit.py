@@ -5,14 +5,11 @@ length distribution against the configured max_length / max_prompt_length
 budget. The point is to know whether DPOTrainer is silently truncating any
 chosen/rejected completions — which would corrupt the preference signal.
 
-Runs on CPU by default (CUDA_VISIBLE_DEVICES hidden at the top) so it's safe to
-run alongside an active GPU training job. Takes ~10-15 minutes on CPU.
+Uses CUDA if available (Whisper alignment + DAC encoding run faster on GPU).
+Run after any GPU training job has finished to avoid VRAM contention; setting
+`CUDA_VISIBLE_DEVICES=""` before invocation forces CPU-only fallback if needed.
+GPU run: ~1-2 minutes. CPU fallback: ~10-15 minutes.
 """
-import os
-# Hide the GPU before anything else imports torch — safety belt so this can
-# run alongside an active GRPO training job without GPU contention.
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
-
 import importlib.util
 import statistics
 import sys
@@ -33,8 +30,10 @@ def main() -> int:
     print(f"total DPO pairs (train split): {len(pairs)}")
 
     import outetts
+    import torch
 
-    print("loading OuteTTS interface on CPU...")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"loading OuteTTS interface on {device}...")
     iface = outetts.Interface(
         config=outetts.ModelConfig.auto_config(
             model=outetts.Models.VERSION_1_0_SIZE_1B,
