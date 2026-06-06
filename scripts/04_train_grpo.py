@@ -88,43 +88,8 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
     """
     target_sr = int(getattr(iface.audio_codec, "sr", 24000))
 
-    def _decode_to_audio(completion_str: str) -> tuple[np.ndarray, int] | None:
-        ids = tokenizer.encode(completion_str, add_special_tokens=False)
-        try:
-            codes = iface.prompt_processor.extract_audio_from_tokens(ids)
-        except Exception as e:
-            logger.warning("extract_audio_from_tokens failed: %s", e)
-            return None
-        # `codes` comes back as list[list[int]] (one inner list per DAC codebook).
-        # audio_codec.decode wants an int64 tensor of shape (B=1, n_codebooks=2, T)
-        # on the codec's device. Same conversion we use in the round-trip diagnostic.
-        if not codes or not codes[0]:
-            return None
-        try:
-            codes_t = torch.tensor(codes, dtype=torch.long).unsqueeze(0).to(iface.audio_codec.device)
-        except Exception as e:
-            logger.warning("codes tensor build failed: %s", e)
-            return None
-        try:
-            audio = iface.audio_codec.decode(codes_t)
-        except Exception as e:
-            logger.warning("DAC decode failed: %s", e)
-            return None
-        # Normalize to (T,) float32 numpy on CPU
-        if hasattr(audio, "audio"):
-            audio = audio.audio
-        if hasattr(audio, "cpu"):
-            audio = audio.cpu().numpy()
-        arr = np.asarray(audio).squeeze()
-        if arr.ndim > 1:
-            arr = arr.mean(axis=0) if arr.shape[0] < arr.shape[-1] else arr.mean(axis=-1)
-        arr = arr.astype(np.float32)
-        if arr.size < target_sr * 0.2:   # less than 0.2s of audio -> garbage
-            return None
-        return arr, target_sr
-
-    # Diagnostic counter — every Nth reward batch we log details of the first
-    # completion so we can see whether the model is producing parseable audio tokens.
+    # Diagnostic counter — every Nth reward batch the first completion's details
+    # are logged so it's visible whether the model is producing parseable audio tokens.
     call_count = {"n": 0}
 
     def reward_func(prompts: list[str], completions: list[str], **kwargs) -> list[float]:
@@ -169,7 +134,14 @@ def make_reward_fn(iface, tokenizer, ref_audio: np.ndarray | None, ref_sr: int |
 
             # ---- decode (inline so we can introspect each step) ----
             if completion_ids_list is not None and i < len(completion_ids_list):
-                ids = list(completion_ids_list[i]) if not isinstance(completion_ids_list[i], list) else completion_ids_list[i]
+                raw = completion_ids_list[i]
+                # raw may be list[int], 1-D torch tensor, or np.ndarray. list(tensor)
+                # yields 0-d tensors, which extract_audio_from_tokens does NOT accept;
+                # coerce to plain Python ints regardless of input type.
+                if isinstance(raw, list):
+                    ids = raw
+                else:
+                    ids = [int(t) for t in raw]
             else:
                 ids = tokenizer.encode(completion, add_special_tokens=False)
             try:
@@ -279,6 +251,22 @@ def main() -> int:
     speaker = iface.load_default_speaker("EN-FEMALE-1-NEUTRAL")
     logger.info("using default speaker EN-FEMALE-1-NEUTRAL for all generation prompts")
 
+    # Sanity-check the regex used to recover the target text from a speaker-
+    # bearing prompt. With a speaker reference, OuteTTS may embed the speaker's
+    # transcript inside its own <|text_start|>...<|text_end|> span. If that
+    # appears BEFORE the target span the non-greedy regex would grab the wrong
+    # text and corrupt every WER score for training. Fail loudly here rather
+    # than silently train on a bad signal.
+    _probe_text = "the quick brown fox jumps over the lazy dog"
+    _probe_prompt = iface.prompt_processor.get_completion_prompt(_probe_text, speaker=speaker)
+    _recovered = extract_text_from_prompt(_probe_prompt)
+    if _recovered != _probe_text:
+        raise RuntimeError(
+            f"extract_text_from_prompt regex does NOT round-trip on speaker-bearing prompts. "
+            f"Expected {_probe_text!r}, got {_recovered!r}. WER signal would be corrupted; aborting."
+        )
+    logger.info("regex round-trip OK: extract_text_from_prompt recovers target text from speaker-bearing prompt")
+
     prompts: list[dict] = []
     for _, row in train_df.iterrows():
         prompt_str = iface.prompt_processor.get_completion_prompt(row["prompt"], speaker=speaker)
@@ -374,6 +362,18 @@ def main() -> int:
     # ----- GRPOTrainer -----
     from trl import GRPOConfig, GRPOTrainer
 
+    # scale_rewards is only present in TRL >= 0.12. Pass it conditionally so
+    # older versions still work; defaults to True (TRL's own default) if absent.
+    import inspect
+    _grpo_cfg_params = inspect.signature(GRPOConfig).parameters
+    _scale_kwarg: dict = {}
+    if "scale_rewards" in _grpo_cfg_params:
+        _scale_kwarg["scale_rewards"] = bool(cfg.get("scale_rewards", True))
+        logger.info("GRPOConfig.scale_rewards=%s", _scale_kwarg["scale_rewards"])
+    elif "scale_rewards" in cfg:
+        logger.warning("config sets scale_rewards=%s but this TRL version doesn't support it; ignoring",
+                       cfg["scale_rewards"])
+
     run_name = f"grpo-{'smoke-' if args.smoke_test else ''}{int(time.time())}"
     grpo_args = GRPOConfig(
         output_dir=str(Path(cfg["output_dir"]) / run_name),
@@ -402,6 +402,7 @@ def main() -> int:
         run_name=run_name,
         seed=cfg["seed"],
         remove_unused_columns=False,
+        **_scale_kwarg,
     )
 
     trainer = GRPOTrainer(

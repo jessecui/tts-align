@@ -52,4 +52,3 @@ max_prompt_length: 512
 output_dir: "runs/kto"
 logging_steps: 10
 save_steps: 100
-wandb_project: "tts-rl"

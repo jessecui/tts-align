@@ -15,9 +15,12 @@ reference_audio_path: "data/generated/reference_speaker.wav"
 # Dropout is 0.0 here (vs 0.05 for DPO/KTO). TRL's GRPOTrainer calls
 # model.generate while the model is in train() mode, so nonzero lora_dropout
 # fires on every rollout and adds noise to the generated audio. PEFT's default
-# for online RL is 0.0 for this reason. (We tested 0.05 as a sibling run and
-# saw marginally higher composite; see the GRPO notes section of the README
-# for the full investigation.)
+# for online RL is 0.0 for this reason.
+#
+# A sibling run at 0.05 scored marginally higher composite on a single seed,
+# but 0.0 is kept because (a) rollout-consistency is the methodological standard
+# and (b) the 0.05 advantage was within seed noise. See the GRPO notes section
+# of the README for the full investigation.
 lora:
   r: 16
   alpha: 32
@@ -31,7 +34,8 @@ lora:
     - up_proj
     - down_proj
 
-# Reward
+# Reward. Weights are RELATIVE — group-z normalization in GRPO removes the
+# absolute scale, so the 0.6/0.4/0.3 ratios are what matter (not the sum).
 reward_weights:
   wer: 0.6
   utmos: 0.4
@@ -42,18 +46,38 @@ beta: 0.05               # KL coefficient — start here, halve/double for tunin
 num_generations: 4       # group size K (rollouts per prompt)
 num_iterations: 1        # gradient updates per rollout batch (1 = on-policy)
 
-# Optimization — smaller LR than DPO/KTO because online RL is noisier
-max_steps: 200
+# scale_rewards=False (Dr. GRPO recommendation). At temperature 0.4 with K=4
+# rollouts, groups frequently collapse to near-identical rewards; dividing by a
+# tiny std then amplifies Whisper/UTMOS measurement noise into full-magnitude
+# ±1 advantages. Keeping the unscaled (R - mean) signal is more robust in this
+# low-diversity regime and also avoids the std-scaling bias toward low-variance
+# prompts that the Dr. GRPO paper identifies.
+scale_rewards: false
+
+# Optimization — smaller LR than DPO/KTO because online RL is noisier.
+#
+# Effective batch math: TRL requires
+#     (per_device_train_batch_size × grad_accum × num_processes) % num_generations == 0
+# and the prompts-per-optimizer-step is that quantity divided by num_generations.
+# Single-GPU: 1 × 16 / 4 = 4 prompts per step (16 completions per step).
+#
+# Previous run was 1 prompt × 200 steps = 200 prompts × 4 rollouts = 800 rollouts.
+# This config is 4 prompts × 50 steps = 200 prompts × 4 rollouts = 800 rollouts.
+# Total compute is held constant; the trade is 4× larger per-step batch (variance
+# reduction on the gradient) for 4× fewer optimizer updates. Pairs with
+# scale_rewards=False above — both target the same diagnosis that the previous
+# run's gradient signal was dominated by per-prompt reward noise.
+max_steps: 50
 learning_rate: 5.0e-6
-batch_size: 1            # per-device PROMPTS (effective generations = batch * num_generations)
-grad_accum: 4
+batch_size: 1            # per-device COMPLETIONS; must be divisible by num_generations
+grad_accum: 16
 warmup_ratio: 0.05
 max_prompt_length: 4096       # speaker reference is ~600 tokens; 4k leaves room
 max_completion_length: 2048   # OuteTTS audio sequences are long
 
 # Generation — OuteTTS 1.0 canonical sampling settings.
 # The model docs are emphatic: "use these exact settings" or the model produces
-# broken/text output. We were violating most of them and getting English text
+# broken/text output. Earlier runs violated most of these and got English text
 # back instead of audio codec tokens. In particular, repetition_penalty=1.1
 # triggers the RepetitionPenaltyLogitsProcessorPatch outetts monkey-patches
 # into transformers (window of last 64 tokens only).
@@ -75,4 +99,3 @@ vllm_gpu_memory_utilization: 0.4   # leave ~24 GB for the training model + rewar
 output_dir: "runs/grpo"
 logging_steps: 5
 save_steps: 50
-wandb_project: "tts-rl"

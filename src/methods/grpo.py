@@ -30,6 +30,24 @@ Loss (per token, per rollout, per group):
 This is PPO-style clipping with group-relative advantages instead of GAE.
 TRL's GRPOTrainer implements this with all the masking, padding, and rollout
 plumbing you'd otherwise have to write yourself.
+
+Notes on what the shipped config actually exercises:
+
+- `num_iterations=1` (the shipped value) makes the PPO clip dormant: rollout-time
+  and update-time policies are the same, so the ratio is identically 1 and the
+  loss reduces to REINFORCE with a group baseline plus the KL term. The clipping
+  machinery here is for the multi-epoch case (num_iterations > 1).
+
+- Token-level loss uses global token-mean normalization (`masked.sum() / mask.sum()`),
+  which is the DAPO / Dr. GRPO style. The original GRPO paper averages per-sequence
+  means first and then over the batch, which carries a known length bias toward
+  shorter sequences. The token-mean choice avoids that bias.
+
+- Rollouts are sampled through top_k / top_p / repetition_penalty processors, so
+  the sampling distribution is not the policy distribution whose logprobs enter
+  the loss. This mismatch is universal in practice (everyone does this), but it's
+  worth noting that on OuteTTS specifically `repetition_penalty=1.1` over a
+  64-token window is non-trivial.
 """
 from __future__ import annotations
 
