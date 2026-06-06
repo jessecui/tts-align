@@ -11,11 +11,13 @@ dataset_path: "data/dataset.parquet"
 reference_audio_path: "data/generated/reference_speaker.wav"
 
 # LoRA. Rank/alpha/targets match DPO/KTO for an apples-to-apples LoRA budget.
-# Dropout is set to 0 here (vs 0.05 in DPO/KTO) because TRL keeps the model in
-# train() mode during GRPO's rollout sampling, so any nonzero lora_dropout fires
-# during generation and adds noise to the audio Whisper transcribes. Our offline
-# diagnostic of the same prompt+sampling scored composite 0.897; TRL's training
-# rewards came in at ~0.57. Dropout-during-rollout is the prime suspect.
+#
+# Dropout is 0.0 here (vs 0.05 for DPO/KTO). TRL's GRPOTrainer calls
+# model.generate while the model is in train() mode, so nonzero lora_dropout
+# fires on every rollout and adds noise to the generated audio. PEFT's default
+# for online RL is 0.0 for this reason. (We tested 0.05 as a sibling run and
+# saw marginally higher composite; see the GRPO notes section of the README
+# for the full investigation.)
 lora:
   r: 16
   alpha: 32

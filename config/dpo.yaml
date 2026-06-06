@@ -10,9 +10,8 @@ model_id: "OuteAI/Llama-OuteTTS-1.0-1B"
 dataset_path: "data/dataset.parquet"
 
 # LoRA — rank 16 / alpha 32 / attention + MLP projections.
-# DPO doesn't sample at training time, so lora_dropout=0.05 is safe here.
-# (GRPO sets dropout to 0.0 because TRL keeps the model in train() mode
-# during rollout sampling — see config/grpo.yaml.)
+# Dropout 0.05 is the standard supervised-LoRA default and is safe here because
+# DPO doesn't sample at training time. GRPO uses 0.0 instead — see config/grpo.yaml.
 lora:
   r: 16
   alpha: 32

@@ -1,8 +1,8 @@
 """LoRA configuration helpers.
 
 Defaults: rank 16, alpha 32, dropout 0.05, attention proj + MLP proj.
-Per-method configs (config/{dpo,kto,grpo}.yaml) may override (GRPO uses
-dropout 0.0 because TRL keeps the model in train() mode during rollouts).
+Per-method configs (config/{dpo,kto,grpo}.yaml) may override. GRPO sets
+dropout to 0.0 because TRL keeps the model in train() mode during rollouts.
 
 We deliberately do NOT target `embed_tokens` or `lm_head`: OuteTTS extends
 Llama's vocabulary with thousands of audio-codec tokens whose embeddings are

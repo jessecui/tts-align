@@ -12,14 +12,14 @@ n=30 held-out eval. Same reward pipeline as training. LoRA r=16/α=32 on attenti
 |---|---|---|---|---|---|
 | base | 0.068 | 4.36 | 0.580 | 0.871 | 13.3% |
 | DPO (212 pairs) | 0.073 | 4.39 | 0.617 | 0.875 | 10.0% |
-| KTO | 0.049 | **4.40** | **0.623** | **0.887** | **6.7%** |
-| GRPO | **0.048** | 4.38 | 0.568 | 0.880 | **6.7%** |
+| KTO | **0.049** | **4.40** | **0.623** | **0.887** | **6.7%** |
+| GRPO | 0.066 | 4.34 | 0.569 | 0.870 | **6.7%** |
 
 Directional signals at this n, not statistically defensible deltas:
-- All three beat base on composite. KTO leads, GRPO second, DPO third.
-- KTO and GRPO tie on WER (~0.048) and catastrophic-failure rate (2/30 vs base's 4/30).
+- KTO and DPO beat base on composite. GRPO essentially ties base (0.870 vs 0.871).
+- KTO is the clear winner on every metric except catastrophic-failure rate, where GRPO matches it (both 2/30 vs base's 4/30).
 - DPO's mean WER came in *above* base. The composite still improved (better UTMOS + speaker_sim), but DPO isn't pulling weight on intelligibility here.
-- GRPO regressed on speaker similarity (0.568 vs 0.580). More intelligible, less voice-matched. See [GRPO notes](#grpo-notes) — known dropout-during-rollout issue is the likely cause.
+- GRPO matched base on intelligibility but regressed on speaker similarity (0.569 vs 0.580). The investigation into why is the most interesting part of the GRPO results — see [GRPO notes](#grpo-notes).
 - The most interesting finding is methodological, not on the leaderboard — next section.
 
 ### Data-quantity hypothesis is wrong
@@ -37,18 +37,22 @@ DPO is data-*quality* limited here, not data-quantity limited. KTO sidesteps tha
 
 ### GRPO notes
 
-GRPO ties KTO on WER and catastrophic-failure rate. Composite trails KTO by 0.007. Speaker_sim is the soft spot — regressed from base by 0.012.
+GRPO essentially tied base on composite (0.870 vs 0.871). It cut catastrophic failures by half (6.7% vs 13.3% — same as KTO), but didn't improve WER or speaker similarity in a meaningful way. The training-time signal looked plausible (loss > 0, gradients flowing, KL bounded), but the policy barely moved from the reference (KL ~0.008).
 
-Post-hoc diagnostic ([`scripts/diagnostics/check_grpo_rollout.py`](scripts/diagnostics/check_grpo_rollout.py)) traced the gap: TRL's `GRPOTrainer` calls `model.generate` while the model is in `train()` mode, so `lora_dropout: 0.05` fires on every rollout. An offline reproduction of the same prompt + sampling outside TRL scored composite 0.897 per rollout. Training rewards averaged ~0.57. The ~0.33 gap is dropout-during-rollout noise corrupting the audio Whisper sees, which feeds back as bad reward signal. Config now sets `lora_dropout: 0.0`; the checkpoint evaluated here was trained before that fix. A refit (~$5, ~4 hours) is the obvious followup.
+**The dropout-during-rollout investigation.** A diagnostic ([`scripts/diagnostics/check_grpo_rollout.py`](scripts/diagnostics/check_grpo_rollout.py)) showed that TRL's `GRPOTrainer` calls `model.generate` while the model is in `train()` mode, which means any nonzero `lora_dropout` fires on every rollout. The same prompt + sampling reproduced *outside* TRL scored composite 0.897 per rollout; the in-loop training rewards averaged ~0.57. That ~0.33 gap was the dropout corrupting the audio Whisper sees. PEFT's default for online RL is `lora_dropout: 0.0` precisely for this reason — that's what we're using here.
+
+We did test a sibling run with `lora_dropout: 0.05` (the supervised-LoRA default we'd started with). It came in marginally higher on composite (~0.880 vs 0.870), which was unexpected. Plausible mechanism: at this small scale (53 prompts, K=4 rollouts, temperature 0.4), within-group reward variance is the actual bottleneck for GRPO finding meaningful group-relative advantages, and the modest dropout was acting as beneficial variance injection (within-group std ~0.009 with dropout vs ~0.006 without). Interesting empirical wrinkle, but not enough to override the methodological standard — shipped 0.0.
+
+The deeper read: GRPO at 53-prompt scale isn't where the method shines. Online RL is data-hungry by design, and 53 × 200 × 4 ≈ 42k rollouts that are all near-identical doesn't give group-relative advantages much to work with regardless of dropout.
 
 ### Honest caveats
 
 - n=30 is small. Composite differences below ~0.01 are within per-seed noise.
 - 3–43 epochs over 53 prompts × 4 candidates — some training-set memorization is inevitable.
-- GRPO's eval result is a lower bound here; the dropout-during-rollout issue suppressed it. A refit with `lora_dropout: 0.0` is the obvious followup.
+- GRPO essentially didn't beat base on composite. KTO leads on every composite-contributing metric. Online RL at 53-prompt scale isn't where this method shines — within-group reward variance is too small for group-relative advantages to give useful gradient signal. See the GRPO notes for the full investigation, including a wrinkle on dropout.
 - Composite is a proxy. Whisper has WER, UTMOS is a learned MOS estimate, ECAPA is one of several reasonable speaker encoders. The methods optimize the composite's preferences, not human preferences.
 
-Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the prompts preference optimization had the most room to help on) at [`results/samples/`](results/samples/). Each prompt directory contains `base.wav`, `dpo.wav`, `kto.wav` plus the source text (GRPO samples not yet refreshed for this rerun). Full audio under [`results/audio/<method>/`](results/audio/) on the rented box (gitignored — too big for the repo). Training curves: [DPO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/646c97ki) · [KTO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/6i6cxo7x) · [GRPO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/977d6oqd) (wandb).
+Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the prompts preference optimization had the most room to help on) at [`results/samples/`](results/samples/). Each prompt directory contains `base.wav`, `dpo.wav`, `kto.wav`, `grpo.wav` plus the source text. Full audio under [`results/audio/<method>/`](results/audio/) on the rented box (gitignored — too big for the repo). Training curves: [DPO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/646c97ki) · [KTO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/6i6cxo7x) · [GRPO run](https://wandb.ai/jcui-projects-personal/tts-rl/runs/977d6oqd) (wandb).
 
 ## Plan
 
@@ -60,7 +64,7 @@ Hand-picked sample audio (the 3 prompts where base WER was highest — i.e., the
 | 4     | GRPO (online; reward function inside training loop) | Done |
 | 5     | Held-out comparison eval + writeup                 | Done |
 
-**GRPO scope note:** GRPO was originally scoped out after the OuteTTS integration turned out to be more involved than I'd planned (word-aligned codec-token training format, custom prompt processor, etc.). I added it back in the final session after the DPO/KTO comparison was published, both to complete the originally-pitched three-way comparison and because the data-quantity rerun (see results above) created the right moment to broaden the comparison. The GRPO integration surfaced its own complications (notably the dropout-during-rollout issue with TRL described in the GRPO notes), which are documented honestly in the writeup rather than worked around.
+**GRPO scope note:** GRPO was originally scoped out after the OuteTTS integration turned out to be more involved than I'd planned (word-aligned codec-token training format, custom prompt processor, etc.). I added it back in the final session after the DPO/KTO comparison was published, both to complete the originally-pitched three-way comparison and because the data-quantity rerun (see results above) created the right moment to broaden the comparison. The GRPO integration surfaced its own complications (the dropout-during-rollout finding described in the GRPO notes is the most interesting), which are documented honestly in the writeup rather than worked around.
 
 ## Model choice
 

@@ -5,5 +5,6 @@ _30 held-out prompts. Same reward pipeline as training (Whisper-small WER, UTMOS
 | method | n | mean WER | mean UTMOS | mean spk_sim | mean composite | catastrophic failure (WER>30%) |
 |---|---|---|---|---|---|---|
 | base | 30 | 0.068 | 4.36 | 0.580 | 0.871 | 13.3% |
-| dpo | 30 | 0.061 | 4.38 | 0.586 | 0.876 | 10.0% |
-| kto | 30 | 0.057 | 4.38 | 0.619 | 0.882 | 10.0% |
+| dpo | 30 | 0.073 | 4.39 | 0.617 | 0.875 | 10.0% |
+| kto | 30 | 0.049 | 4.40 | 0.623 | 0.887 | 6.7% |
+| grpo | 30 | 0.066 | 4.34 | 0.569 | 0.870 | 6.7% |

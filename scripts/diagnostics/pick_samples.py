@@ -2,13 +2,14 @@
 
 Picks the 3 eval prompts where the BASE model had the highest WER (i.e., the
 prompts where preference optimization had the most room to help), then copies
-the base/DPO/KTO renditions of each so a listener can A/B them.
+the base/DPO/KTO/GRPO renditions of each so a listener can A/B/C/D them.
 
 Output layout:
     results/samples/<prompt_id>/prompt.txt
     results/samples/<prompt_id>/base.wav
     results/samples/<prompt_id>/dpo.wav
     results/samples/<prompt_id>/kto.wav
+    results/samples/<prompt_id>/grpo.wav
 """
 from __future__ import annotations
 
@@ -41,7 +42,7 @@ def main() -> int:
         out_dir = out_root / pid
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "prompt.txt").write_text(row["prompt"] + "\n", encoding="utf-8")
-        for method in ["base", "dpo", "kto"]:
+        for method in ["base", "dpo", "kto", "grpo"]:
             src = audio_dir / method / f"{pid}.wav"
             dst = out_dir / f"{method}.wav"
             if not src.exists():
