@@ -125,7 +125,7 @@ def evaluate_method(
     ref_sr: int | None,
     audio_dir: Path,
     reward_cfg: RewardConfig,
-    temperature: float = 0.4,
+    temperature: float = 0.7,
 ) -> list[dict]:
     """Synthesize + score every eval prompt with one method."""
     logger.info("=== evaluating: %s ===", method_name)
@@ -237,11 +237,11 @@ def main() -> int:
     parser.add_argument("--reference-audio", type=Path,
                         default=Path("data/generated/reference_speaker.wav"))
     parser.add_argument("--base-model", default="OuteAI/Llama-OuteTTS-1.0-1B")
-    parser.add_argument("--temperature", type=float, default=0.4,
-                        help="sampling temp for eval generation. Default 0.4 is the OuteTTS "
-                             "canonical sampling setting and matches the rollout temperature "
-                             "used during GRPO training, so all four methods are evaluated under "
-                             "identical conditions with no train/eval distribution mismatch.")
+    parser.add_argument("--temperature", type=float, default=0.7,
+                        help="sampling temp for eval generation. Default 0.7 reflects typical "
+                             "TTS deployment where some natural variation is desired. GRPO is "
+                             "trained with rollouts at this same temperature so there is no "
+                             "train/eval temperature mismatch.")
     parser.add_argument("--wer-failure-threshold", type=float, default=0.30)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--limit", type=int, default=None,
